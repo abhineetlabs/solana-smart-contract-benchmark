@@ -1,0 +1,5 @@
+[toolchain]
+anchor_version = "0.0.0-bootstrap"
+
+[programs.localnet]
+counter_authority = "CounterAuthority111111111111111111111111111111"

@@ -1,0 +1,7 @@
+{
+  "promptProtocolVersion": "1.0.0",
+  "defaultMode": "offline",
+  "defaultInteractionMode": "generate",
+  "defaultAttemptCount": 1,
+  "resultsDir": "results"
+}

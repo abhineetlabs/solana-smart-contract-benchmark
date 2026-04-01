@@ -1,0 +1,11 @@
+{
+  "buildCommand": "node tests/build-check.mjs",
+  "publicTestCommand": "node tests/counter_authority.public.spec.mjs",
+  "workspaceRoot": ".",
+  "publicTestInjectionTarget": "tests/",
+  "hiddenTestInjectionTarget": "tests/",
+  "adversarialTestInjectionTarget": "tests/",
+  "editableFiles": [
+    "programs/counter_authority/src/lib.rs"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/run-config.schema.json",
+  "type": "object",
+  "required": [
+    "taskId",
+    "track",
+    "modelId",
+    "mode",
+    "interactionMode",
+    "attemptCount"
+  ],
+  "properties": {
+    "taskId": {
+      "type": "string"
+    },
+    "track": {
+      "type": "string",
+      "enum": [
+        "anchor",
+        "native",
+        "pinocchio"
+      ]
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "offline",
+        "retrieval"
+      ]
+    },
+    "interactionMode": {
+      "type": "string",
+      "enum": [
+        "generate",
+        "complete",
+        "repair",
+        "modify",
+        "migrate"
+      ]
+    },
+    "attemptCount": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

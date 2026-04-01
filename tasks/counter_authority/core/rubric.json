@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on interface completeness and expected state transitions.",
+    "Later hidden/adversarial checks should focus on signer validation and unsafe authority transfer."
+  ]
+}

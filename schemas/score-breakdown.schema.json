@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/score-breakdown.schema.json",
+  "type": "object",
+  "required": [
+    "build",
+    "public",
+    "hidden",
+    "adversarial",
+    "efficiency"
+  ],
+  "properties": {
+    "build": {
+      "type": "number"
+    },
+    "public": {
+      "type": "number"
+    },
+    "hidden": {
+      "type": "number"
+    },
+    "adversarial": {
+      "type": "number"
+    },
+    "efficiency": {
+      "type": "number"
+    }
+  },
+  "additionalProperties": false
+}

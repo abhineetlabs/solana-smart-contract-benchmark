@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/result.schema.json",
+  "type": "object",
+  "required": [
+    "runId",
+    "attemptId",
+    "taskId",
+    "taskVersion",
+    "track",
+    "mode",
+    "interactionMode",
+    "model",
+    "prompt",
+    "artifacts",
+    "build",
+    "tests",
+    "score",
+    "usage",
+    "toolchain"
+  ],
+  "properties": {
+    "runId": {
+      "type": "string"
+    },
+    "attemptId": {
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "taskVersion": {
+      "type": "string"
+    },
+    "track": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "interactionMode": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

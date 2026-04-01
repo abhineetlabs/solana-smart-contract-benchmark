@@ -1,0 +1,22 @@
+{
+  "name": "solana-llm-benchmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.1",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "benchmark": "./benchmark",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate": "./benchmark validate",
+    "list:tasks": "./benchmark list tasks",
+    "list:models": "./benchmark list models"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

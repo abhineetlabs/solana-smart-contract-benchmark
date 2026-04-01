@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/task.schema.json",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "category",
+    "difficulty",
+    "version",
+    "supportedTracks",
+    "supportedModes",
+    "summary",
+    "instructions",
+    "accounts",
+    "invariants",
+    "failureConditions",
+    "editableFiles",
+    "promptAssets",
+    "evaluation",
+    "scoring"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "supportedTracks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "anchor",
+          "native",
+          "pinocchio"
+        ]
+      }
+    },
+    "supportedModes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "generate",
+          "complete",
+          "repair",
+          "modify",
+          "migrate"
+        ]
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instructions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "failureConditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "editableFiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "promptAssets": {
+      "type": "object"
+    },
+    "evaluation": {
+      "type": "object"
+    },
+    "scoring": {
+      "type": "object",
+      "required": [
+        "build",
+        "public",
+        "hidden",
+        "adversarial",
+        "efficiency"
+      ],
+      "properties": {
+        "build": {
+          "type": "number"
+        },
+        "public": {
+          "type": "number"
+        },
+        "hidden": {
+          "type": "number"
+        },
+        "adversarial": {
+          "type": "number"
+        },
+        "efficiency": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

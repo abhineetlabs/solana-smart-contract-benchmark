@@ -1,0 +1,78 @@
+{
+  "id": "counter_authority",
+  "title": "Counter With Updatable Authority",
+  "category": "state-management",
+  "difficulty": "easy",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["generate"],
+  "summary": "Implement a simple counter program with initialization, increment, and authority transfer flows.",
+  "businessLogic": [
+    "An authority initializes the counter account.",
+    "Only the current authority can increment the counter.",
+    "Only the current authority can transfer authority to a new pubkey."
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "description": "Initialize the counter account with the signer as authority and a zero value."
+    },
+    {
+      "name": "increment",
+      "description": "Increment the counter only when the signing authority matches the stored authority."
+    },
+    {
+      "name": "set_authority",
+      "description": "Allow the current authority to update the stored authority."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "authority",
+      "role": "authority",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "counter",
+      "role": "state",
+      "constraints": ["writable"]
+    }
+  ],
+  "invariants": [
+    "Counter authority must be stored on initialize.",
+    "Unauthorized signers must not increment the counter.",
+    "Unauthorized signers must not transfer authority."
+  ],
+  "failureConditions": [
+    "Missing authority validation.",
+    "Missing stored authority field.",
+    "Missing overflow protection."
+  ],
+  "editableFiles": [
+    "programs/counter_authority/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": false,
+    "adversarialTests": false,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.3,
+    "public": 0.7,
+    "hidden": 0.0,
+    "adversarial": 0.0,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/counter_authority/src/lib.rs"]
+    }
+  }
+}
