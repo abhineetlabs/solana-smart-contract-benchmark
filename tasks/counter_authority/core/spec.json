@@ -59,15 +59,15 @@
   },
   "evaluation": {
     "publicTests": true,
-    "hiddenTests": false,
-    "adversarialTests": false,
+    "hiddenTests": true,
+    "adversarialTests": true,
     "collectComputeUnits": false
   },
   "scoring": {
-    "build": 0.3,
-    "public": 0.7,
-    "hidden": 0.0,
-    "adversarial": 0.0,
+    "build": 0.2,
+    "public": 0.2,
+    "hidden": 0.3,
+    "adversarial": 0.3,
     "efficiency": 0.0
   },
   "trackConfigs": {

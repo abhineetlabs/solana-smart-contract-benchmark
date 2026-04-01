@@ -30,6 +30,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "baseline") {
+    await handleBaseline(args.slice(1));
+    return;
+  }
+
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -118,7 +123,63 @@ async function handleRun(args: string[]): Promise<void> {
   console.log(
     `Public tests: ${execution.result.tests.public.passed}/${execution.result.tests.public.total}`,
   );
+  if (execution.result.status === "failed" && execution.result.error) {
+    console.log(`Failure stage: ${execution.result.error.stage}`);
+    console.log(`Failure message: ${execution.result.error.message}`);
+    process.exitCode = 1;
+  }
   console.log(`Artifacts: ${execution.attemptDir}`);
+}
+
+async function handleBaseline(args: string[]): Promise<void> {
+  const baselineType = args[0];
+  const { values } = parseArgs({
+    args: args.slice(1),
+    options: {
+      track: {
+        type: "string",
+      },
+      task: {
+        type: "string",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const track = values.track;
+  const taskId = values.task;
+
+  if (!baselineType || !track || !taskId) {
+    throw new Error("baseline requires a type plus --track and --task.");
+  }
+
+  const modelId =
+    baselineType === "reference"
+      ? "mock/reference"
+      : baselineType === "insecure"
+        ? "mock/insecure"
+        : undefined;
+
+  if (!modelId) {
+    throw new Error(`Unknown baseline type: ${baselineType}`);
+  }
+
+  const execution = await runBenchmark({
+    rootDir: process.cwd(),
+    modelId,
+    track: track as "anchor" | "native" | "pinocchio",
+    taskId,
+    mode: "offline",
+  });
+
+  console.log(`Baseline complete: ${baselineType}`);
+  console.log(`Run: ${execution.result.attemptId}`);
+  console.log(`Score: ${execution.result.score.total}`);
+  console.log(
+    `Tests: public ${execution.result.tests.public.passed}/${execution.result.tests.public.total}, hidden ${execution.result.tests.hidden.passed}/${execution.result.tests.hidden.total}, adversarial ${execution.result.tests.adversarial.passed}/${execution.result.tests.adversarial.total}`,
+  );
+  console.log(`Failure classes: ${execution.result.failureClasses.join(", ") || "none"}`);
 }
 
 function printHelp(): void {
@@ -126,7 +187,8 @@ function printHelp(): void {
   benchmark validate
   benchmark list tasks
   benchmark list models
-  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]`);
+  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
+  benchmark baseline <reference|insecure> --track <track> --task <task>`);
 }
 
 main().catch((error: unknown) => {

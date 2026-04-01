@@ -38,6 +38,7 @@ export async function validateTaskDescriptor(task: TaskDescriptor): Promise<stri
 
     validateTrackConfig(task, supportedTrack, descriptor.config, issues);
     await validateEditableFiles(task, supportedTrack, descriptor.starterDir, descriptor.config.editableFiles, issues);
+    await validateTrackEvaluationFiles(task, supportedTrack, descriptor, issues);
   }
 
   return issues;
@@ -130,5 +131,52 @@ async function validateEditableFiles(
     } catch {
       issues.push(`${task.id}/${track}: editable file is missing from starter scaffold: ${editableFile}`);
     }
+  }
+}
+
+async function validateTrackEvaluationFiles(
+  task: TaskDescriptor,
+  track: TrackId,
+  descriptor: TaskDescriptor["tracks"][TrackId],
+  issues: string[],
+): Promise<void> {
+  if (!descriptor) {
+    return;
+  }
+
+  if (task.spec.evaluation.publicTests) {
+    if (!descriptor.config.publicTestCommand) {
+      issues.push(`${task.id}/${track}: publicTestCommand is required when publicTests is enabled.`);
+    }
+
+    await requirePath(descriptor.publicTestsDir, `${task.id}/${track}: tests-public directory is missing.`, issues);
+  }
+
+  if (task.spec.evaluation.hiddenTests) {
+    if (!descriptor.config.hiddenTestCommand) {
+      issues.push(`${task.id}/${track}: hiddenTestCommand is required when hiddenTests is enabled.`);
+    }
+
+    await requirePath(descriptor.hiddenTestsDir, `${task.id}/${track}: tests-hidden directory is missing.`, issues);
+  }
+
+  if (task.spec.evaluation.adversarialTests) {
+    if (!descriptor.config.adversarialTestCommand) {
+      issues.push(`${task.id}/${track}: adversarialTestCommand is required when adversarialTests is enabled.`);
+    }
+
+    await requirePath(
+      descriptor.adversarialTestsDir,
+      `${task.id}/${track}: tests-adversarial directory is missing.`,
+      issues,
+    );
+  }
+}
+
+async function requirePath(targetPath: string, issue: string, issues: string[]): Promise<void> {
+  try {
+    await access(targetPath, constants.F_OK);
+  } catch {
+    issues.push(issue);
   }
 }

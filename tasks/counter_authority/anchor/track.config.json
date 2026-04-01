@@ -1,6 +1,8 @@
 {
   "buildCommand": "node tests/build-check.mjs",
   "publicTestCommand": "node tests/counter_authority.public.spec.mjs",
+  "hiddenTestCommand": "node tests/counter_authority.hidden.spec.mjs",
+  "adversarialTestCommand": "node tests/counter_authority.adversarial.spec.mjs",
   "workspaceRoot": ".",
   "publicTestInjectionTarget": "tests/",
   "hiddenTestInjectionTarget": "tests/",
