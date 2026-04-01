@@ -134,6 +134,14 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
   const workspaceDir = await mkdtemp(path.join(tmpdir(), "solana-llm-benchmark-"));
   const workspaceRoot = path.join(workspaceDir, "workspace");
   await copyDirectory(track.starterDir, workspaceRoot);
+  const sharedCargoHome = path.join(args.rootDir, ".tooling", "cargo-home");
+  const sharedCargoTargetDir = path.join(args.rootDir, ".tooling", "cargo-target", task.id, track.track);
+  await ensureDir(sharedCargoHome);
+  await ensureDir(sharedCargoTargetDir);
+  const commandEnv = {
+    BENCHMARK_CARGO_HOME: sharedCargoHome,
+    BENCHMARK_CARGO_TARGET_DIR: sharedCargoTargetDir,
+  };
 
   const prompt = await renderPrompt({ task, track });
   await writeTextFile(path.join(attemptDir, "prompt.txt"), prompt);
@@ -177,7 +185,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
     await applyModelOutput(workspaceRoot, parsedOutput);
 
     currentStage = "build";
-    const buildResult = await runCommand(track.config.buildCommand, workspaceExecutionRoot);
+    const buildResult = await runCommand(track.config.buildCommand, workspaceExecutionRoot, commandEnv);
     await writeJsonFile(path.join(logsDir, "build.json"), buildResult);
 
     currentStage = "public_tests";
@@ -186,6 +194,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
       command: track.config.publicTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "public.json"),
+      env: commandEnv,
     });
 
     currentStage = "hidden_tests";
@@ -196,6 +205,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
       command: track.config.hiddenTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "hidden.json"),
+      env: commandEnv,
     });
 
     currentStage = "adversarial_tests";
@@ -206,6 +216,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
       command: track.config.adversarialTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "adversarial.json"),
+      env: commandEnv,
     });
 
     currentStage = "artifact_snapshot";
@@ -406,6 +417,7 @@ async function executeInjectedStage(args: {
   command?: string;
   cwd: string;
   logPath: string;
+  env: Record<string, string>;
 }): Promise<{ summary: StageSummary; commandLogPath?: string }> {
   if (!args.enabled || !args.command) {
     return {
@@ -419,6 +431,7 @@ async function executeInjectedStage(args: {
     command: args.command,
     cwd: args.cwd,
     logPath: args.logPath,
+    env: args.env,
   });
 }
 
@@ -427,6 +440,7 @@ async function executeStage(args: {
   command?: string;
   cwd: string;
   logPath: string;
+  env: Record<string, string>;
 }): Promise<{ summary: StageSummary; commandLogPath?: string }> {
   if (!args.enabled || !args.command) {
     return {
@@ -434,11 +448,21 @@ async function executeStage(args: {
     };
   }
 
-  const result = await runCommand(args.command, args.cwd);
+  const result = await runCommand(args.command, args.cwd, args.env);
   await writeJsonFile(args.logPath, result);
+  const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n");
+  let summary = extractTestSummary(combinedOutput);
+
+  if (!result.success && summary.total === 0) {
+    summary = {
+      passed: 0,
+      total: 1,
+      failures: [summarizeCommandFailure(combinedOutput)],
+    };
+  }
 
   return {
-    summary: extractTestSummary(result.stdout),
+    summary,
     commandLogPath: args.logPath,
   };
 }
@@ -514,6 +538,11 @@ function extractTestSummary(stdout: string): StageSummary {
       failures: parsed.failures ?? [],
     };
   } catch {
+    const cargoSummary = extractCargoTestSummary(stdout);
+    if (cargoSummary) {
+      return cargoSummary;
+    }
+
     return emptyStageSummary();
   }
 }
@@ -523,6 +552,48 @@ function emptyStageSummary(): StageSummary {
     passed: 0,
     total: 0,
     failures: [],
+  };
+}
+
+function summarizeCommandFailure(output: string): string {
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return "command_failed";
+  }
+
+  return lines.slice(-10).join(" | ");
+}
+
+function extractCargoTestSummary(stdout: string): StageSummary | undefined {
+  const summaryMatch = stdout.match(/test result:\s+(ok|FAILED)\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;/i);
+  if (!summaryMatch) {
+    return undefined;
+  }
+
+  const passed = Number(summaryMatch[2] ?? 0);
+  const failed = Number(summaryMatch[3] ?? 0);
+  const failures: string[] = [];
+
+  const failureSectionMatch = stdout.match(/failures:\n([\s\S]*?)\n\ntest result:/m);
+  if (failureSectionMatch?.[1]) {
+    for (const line of failureSectionMatch[1].split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed === "failures:") {
+        continue;
+      }
+
+      failures.push(trimmed);
+    }
+  }
+
+  return {
+    passed,
+    total: passed + failed,
+    failures,
   };
 }
 

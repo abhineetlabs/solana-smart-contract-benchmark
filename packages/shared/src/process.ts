@@ -12,14 +12,21 @@ export interface CommandResult {
   success: boolean;
 }
 
-export async function runCommand(command: string, cwd: string): Promise<CommandResult> {
+export async function runCommand(
+  command: string,
+  cwd: string,
+  envOverrides?: Record<string, string>,
+): Promise<CommandResult> {
   const startedAt = new Date();
 
   return new Promise<CommandResult>((resolve) => {
     const child = spawn(command, {
       cwd,
       shell: true,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...envOverrides,
+      },
     });
 
     let stdout = "";

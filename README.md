@@ -4,7 +4,7 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 ## Current Status
 
-The repository is being built from the implementation blueprint in [docs/IMPLEMENTATION_BLUEPRINT.md](/Users/abhineet/DEV/Build/Solana Smart Contract Benchmark/docs/IMPLEMENTATION_BLUEPRINT.md). The first milestone is:
+The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The first milestone is:
 
 - one Anchor-flavored task
 - one mock model adapter
@@ -14,11 +14,12 @@ The repository is being built from the implementation blueprint in [docs/IMPLEME
 ## Quickstart
 
 ```bash
-npm install
+npm install --ignore-scripts
 ./benchmark validate
 ./benchmark list tasks
 ./benchmark list models
 ./benchmark run --model mock/reference --track anchor --task counter_authority
+./benchmark self-check
 ```
 
 ## What It Measures
@@ -31,5 +32,6 @@ npm install
 ## Current Limitations
 
 - retrieval mode is not implemented yet
-- hidden and adversarial test execution is still being added
-- the initial task fixture is a harness bootstrap task, not a full Solana toolchain-backed benchmark
+- only the first Anchor task is implemented so far
+- Native track and additional tasks are still pending
+- the first real Anchor run may need to fetch Rust test dependencies into the shared Cargo cache

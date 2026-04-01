@@ -1,7 +1,7 @@
 {
   "node": "24.10.0",
   "npm": "11.6.1",
-  "rust": null,
-  "solana": null,
-  "anchor": null
+  "rust": "1.91.1",
+  "solana": "3.1.11",
+  "anchor": "0.32.1"
 }

@@ -1,6 +1,8 @@
-import { mkdir, readFile, writeFile, access, cp, readdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile, access, cp, lstat, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
+
+const SKIPPED_COPY_ENTRIES = new Set([".anchor", ".tooling", "node_modules", "target"]);
 
 export async function pathExists(targetPath: string): Promise<boolean> {
   try {
@@ -36,7 +38,10 @@ export async function readTextFile(targetPath: string): Promise<string> {
 
 export async function copyDirectory(sourceDir: string, destinationDir: string): Promise<void> {
   await ensureDir(path.dirname(destinationDir));
-  await cp(sourceDir, destinationDir, { recursive: true });
+  await cp(sourceDir, destinationDir, {
+    recursive: true,
+    filter: async (sourcePath) => shouldCopyPath(sourcePath),
+  });
 }
 
 export async function listRelativeFiles(rootDir: string): Promise<string[]> {
@@ -61,4 +66,17 @@ async function walk(rootDir: string, currentDir: string, output: string[]): Prom
 
 export function toPosixPath(value: string): string {
   return value.split(path.sep).join("/");
+}
+
+async function shouldCopyPath(sourcePath: string): Promise<boolean> {
+  if (SKIPPED_COPY_ENTRIES.has(path.basename(sourcePath))) {
+    return false;
+  }
+
+  try {
+    const stats = await lstat(sourcePath);
+    return !stats.isSocket();
+  } catch {
+    return false;
+  }
 }

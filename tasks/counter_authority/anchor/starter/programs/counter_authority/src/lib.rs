@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("CounterAuthority111111111111111111111111111111");
+declare_id!("2jM5zF1tN3UiYh6R6PCYJw3fd6kjYH1rcY4h4g3YFmV7");
 
 #[program]
 pub mod counter_authority {

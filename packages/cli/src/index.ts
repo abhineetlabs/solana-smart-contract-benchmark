@@ -35,6 +35,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "self-check") {
+    await handleSelfCheck(args.slice(1));
+    return;
+  }
+
   throw new Error(`Unknown command: ${command}`);
 }
 
@@ -182,13 +187,89 @@ async function handleBaseline(args: string[]): Promise<void> {
   console.log(`Failure classes: ${execution.result.failureClasses.join(", ") || "none"}`);
 }
 
+async function handleSelfCheck(args: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      track: {
+        type: "string",
+      },
+      task: {
+        type: "string",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const track = (values.track ?? "anchor") as "anchor" | "native" | "pinocchio";
+  const taskId = values.task ?? "counter_authority";
+  const failures: string[] = [];
+
+  const reference = await runBenchmark({
+    rootDir: process.cwd(),
+    modelId: "mock/reference",
+    track,
+    taskId,
+    mode: "offline",
+  });
+
+  if (reference.result.status !== "completed" || reference.result.score.total < 0.9999) {
+    failures.push("reference baseline did not achieve a clean pass");
+  }
+
+  const insecure = await runBenchmark({
+    rootDir: process.cwd(),
+    modelId: "mock/insecure",
+    track,
+    taskId,
+    mode: "offline",
+  });
+
+  if (
+    insecure.result.status !== "completed" ||
+    insecure.result.tests.adversarial.total === 0 ||
+    insecure.result.tests.adversarial.passed >= insecure.result.tests.adversarial.total
+  ) {
+    failures.push("insecure baseline did not fail adversarial checks");
+  }
+
+  const invalid = await runBenchmark({
+    rootDir: process.cwd(),
+    modelId: "mock/invalid-json",
+    track,
+    taskId,
+    mode: "offline",
+  });
+
+  if (invalid.result.status !== "failed" || invalid.result.error?.stage !== "model_output_validation") {
+    failures.push("invalid-json baseline did not fail as a structured model-output validation error");
+  }
+
+  console.log(`Self-check task: ${taskId}`);
+  console.log(`Reference score: ${reference.result.score.total}`);
+  console.log(`Insecure adversarial: ${insecure.result.tests.adversarial.passed}/${insecure.result.tests.adversarial.total}`);
+  console.log(`Invalid-json status: ${invalid.result.status}`);
+
+  if (failures.length > 0) {
+    for (const failure of failures) {
+      console.error(`- ${failure}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log("Self-check passed.");
+}
+
 function printHelp(): void {
   console.log(`Usage:
   benchmark validate
   benchmark list tasks
   benchmark list models
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
-  benchmark baseline <reference|insecure> --track <track> --task <task>`);
+  benchmark baseline <reference|insecure> --track <track> --task <task>
+  benchmark self-check [--track <track>] [--task <task>]`);
 }
 
 main().catch((error: unknown) => {

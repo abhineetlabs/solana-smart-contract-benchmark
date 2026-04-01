@@ -4,5 +4,8 @@ dist/
 *.log
 tmp/
 .tmp/
+.tooling/
+tmp-anchor-counter-sample/
+**/target/
 results/*
 !results/.gitkeep
