@@ -1,0 +1,14 @@
+[toolchain]
+anchor_version = "0.32.1"
+package_manager = "npm"
+
+[programs.localnet]
+escrow_basic = "3BwUkQMtq1YmJ7JZvRdTZTQQY39mGnbfYbpEXRXsB7Mg"
+
+[provider]
+cluster = "localnet"
+wallet = "wallets/localnet.json"
+
+[features]
+resolution = true
+skip-lint = true

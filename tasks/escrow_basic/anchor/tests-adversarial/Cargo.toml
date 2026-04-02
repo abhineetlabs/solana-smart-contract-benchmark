@@ -1,0 +1,12 @@
+[package]
+name = "escrow_basic_adversarial_tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-client = "0.32.1"
+escrow_basic = { path = "../programs/escrow_basic" }
+spl-associated-token-account = "7"
+spl-token = "8"
+
+[workspace]

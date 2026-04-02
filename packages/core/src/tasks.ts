@@ -53,7 +53,7 @@ export async function discoverTasks(rootDir: string): Promise<TaskDescriptor[]> 
         rootDir: trackRoot,
         starterDir: path.join(trackRoot, "starter"),
         trackConfigPath,
-        publicTestsDir: path.join(trackRoot, "tests-public"),
+        publicTestsDir: path.join(trackRoot, "starter", "tests-public"),
         hiddenTestsDir: path.join(trackRoot, "tests-hidden"),
         adversarialTestsDir: path.join(trackRoot, "tests-adversarial"),
         referenceSolutionDir: path.join(trackRoot, "reference-solution"),

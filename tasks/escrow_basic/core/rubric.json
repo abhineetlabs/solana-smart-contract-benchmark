@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on PDA derivation, asset movement, and expected lifecycle transitions.",
+    "Hidden and adversarial checks focus on maker binding, mint validation, payout redirection, and replay resistance."
+  ]
+}

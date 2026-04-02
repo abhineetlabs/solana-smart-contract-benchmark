@@ -1,0 +1,90 @@
+{
+  "id": "escrow_basic",
+  "title": "Basic SPL Token Escrow",
+  "category": "escrow",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["generate"],
+  "summary": "Implement a two-party SPL token escrow with PDA-backed custody, exchange, and cancel flows.",
+  "businessLogic": [
+    "A maker initializes an escrow by depositing offered tokens into a PDA-controlled vault.",
+    "A taker can atomically exchange the requested asset to settle the escrow.",
+    "The maker can cancel an unsettled escrow and reclaim the locked asset."
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "description": "Create escrow state, derive the vault authority PDA, and move maker funds into the vault."
+    },
+    {
+      "name": "exchange",
+      "description": "Move the taker's requested asset to the maker and release the maker's offered asset from the vault."
+    },
+    {
+      "name": "cancel",
+      "description": "Return the maker's locked asset from the vault when the escrow has not been exchanged."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "maker",
+      "role": "authority",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "taker",
+      "role": "counterparty",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "escrow",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "vault",
+      "role": "custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Only the stored maker can cancel an escrow.",
+    "Vault custody must be controlled by a program-derived authority.",
+    "Exchange must validate the expected token mints and payout accounts before moving funds.",
+    "Successful settlement or cancellation must close the escrow state and vault account."
+  ],
+  "failureConditions": [
+    "Missing maker binding or signer validation.",
+    "Missing token mint validation for exchanged assets.",
+    "Missing PDA validation for vault authority or escrow derivation.",
+    "Allowing payout redirection to attacker-controlled token accounts."
+  ],
+  "editableFiles": [
+    "programs/escrow_basic/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/escrow_basic/src/lib.rs"]
+    }
+  }
+}

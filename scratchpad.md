@@ -9,7 +9,8 @@
 
 - Phase 2 core plumbing is complete for the first task.
 - Current completed goal: the benchmark now supports both mock baselines and real Claude Code CLI execution for `counter_authority`.
-- Current next goal: add a second task and expand beyond the first vertical slice.
+- Current completed goal: a second, harder Anchor task (`escrow_basic`) now runs end-to-end with public, hidden, and adversarial suites.
+- Current next goal: add a second track, starting with `counter_authority` on `native`.
 
 ## Decisions Made
 
@@ -24,6 +25,8 @@
 - Skip runtime-only directories and socket files when copying workspaces into temp runs or persisted artifacts.
 - Use the local `claude` CLI in print mode with tools disabled and structured JSON output so Claude Code subscription plans can be benchmarked without an Anthropic API key.
 - Run Claude Code benchmark invocations from a temporary clean directory to avoid accidental project-context leakage from the benchmark repo itself.
+- Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
+- Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 
 ## Environment Notes
 
@@ -39,8 +42,8 @@
 ## Immediate Work Queue
 
 1. Add a second task, preferably `escrow_basic` or `vault_basic`.
-2. Improve failure-class mapping from test names and failure payloads.
-3. Add `native` track support only after a second task is stable.
+2. Add `native` track support, starting with `counter_authority`.
+3. Improve failure-class mapping from test names and failure payloads.
 4. Add result comparison/reporting helpers once there is more than one meaningful model/task combination.
 
 ## Milestones Reached
@@ -116,6 +119,30 @@
   - public suite warmup passed
   - hidden suite warmup passed
   - adversarial suite warmup passed
+- Second task added: `escrow_basic` on the `anchor` track.
+- `escrow_basic` covers:
+  - PDA-derived escrow state
+  - PDA-controlled SPL token vault custody
+  - maker cancel flow
+  - taker exchange flow
+  - token mint and payout-account validation
+- `escrow_basic` verified commands:
+  - `./benchmark validate`
+  - `./benchmark warm-cache --track anchor --task escrow_basic`
+  - `./benchmark baseline reference --track anchor --task escrow_basic`
+  - `./benchmark baseline insecure --track anchor --task escrow_basic`
+  - `./benchmark self-check --track anchor --task escrow_basic`
+- Latest verified `escrow_basic` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `escrow_basic` insecure result:
+  - public `3/3`
+  - hidden `0/3`
+  - adversarial `1/3`
+  - score `0.3833`
+  - failure classes: `token_validation`
 
 ## Risks / Follow-Ups
 
@@ -123,3 +150,4 @@
 - The earlier host-side `solana-program-test` route is no longer used because it hits `solana-invoke` behavior that is only implemented on the Solana target.
 - The first Claude Code benchmark run can consume noticeable quota depending on the chosen Claude model and the prompt size.
 - Hidden and adversarial suite manifests intentionally target the injected temp workspace layout, so committed lockfiles for those suites still require either the warm-cache workflow or a future manifest/layout refinement.
+- Anchor/localnet-backed benchmark runs should be executed sequentially when they spin up validators, since parallel runs can contend on the default RPC port and produce misleading failures.

@@ -1,0 +1,13 @@
+{
+  "buildCommand": "mkdir -p \"$BENCHMARK_CARGO_HOME\" \"$BENCHMARK_CARGO_TARGET_DIR\" && source ~/.cargo/env >/dev/null 2>&1 && RUSTUP_TOOLCHAIN=stable CARGO_HOME=\"$BENCHMARK_CARGO_HOME\" anchor build",
+  "publicTestCommand": "mkdir -p \"$BENCHMARK_CARGO_HOME\" \"$BENCHMARK_CARGO_TARGET_DIR\" && source ~/.cargo/env >/dev/null 2>&1 && RUSTUP_TOOLCHAIN=stable CARGO_HOME=\"$BENCHMARK_CARGO_HOME\" anchor test --skip-build --run tests-public",
+  "hiddenTestCommand": "mkdir -p \"$BENCHMARK_CARGO_HOME\" \"$BENCHMARK_CARGO_TARGET_DIR\" && source ~/.cargo/env >/dev/null 2>&1 && RUSTUP_TOOLCHAIN=stable CARGO_HOME=\"$BENCHMARK_CARGO_HOME\" anchor test --skip-build --run tests-hidden",
+  "adversarialTestCommand": "mkdir -p \"$BENCHMARK_CARGO_HOME\" \"$BENCHMARK_CARGO_TARGET_DIR\" && source ~/.cargo/env >/dev/null 2>&1 && RUSTUP_TOOLCHAIN=stable CARGO_HOME=\"$BENCHMARK_CARGO_HOME\" anchor test --skip-build --run tests-adversarial",
+  "workspaceRoot": ".",
+  "publicTestInjectionTarget": "tests-public/",
+  "hiddenTestInjectionTarget": "tests-hidden/",
+  "adversarialTestInjectionTarget": "tests-adversarial/",
+  "editableFiles": [
+    "programs/escrow_basic/src/lib.rs"
+  ]
+}
