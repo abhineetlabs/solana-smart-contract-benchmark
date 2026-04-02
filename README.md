@@ -6,7 +6,9 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The first milestone is:
 
-- one real Anchor-flavored task
+- two working benchmark slices:
+  - `counter_authority` on `anchor` and `native`
+  - `escrow_basic` on `anchor`
 - mock baselines plus a Claude Code CLI adapter
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check and warm-cache commands
@@ -20,6 +22,8 @@ npm install --ignore-scripts
 ./benchmark list models
 ./benchmark warm-cache --track anchor --task counter_authority
 ./benchmark run --model mock/reference --track anchor --task counter_authority
+./benchmark warm-cache --track anchor --task escrow_basic
+./benchmark baseline reference --track native --task counter_authority
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark self-check
 ```
@@ -34,6 +38,6 @@ npm install --ignore-scripts
 ## Current Limitations
 
 - retrieval mode is not implemented yet
-- only the first Anchor task is implemented so far
-- Native track and additional tasks are still pending
+- reporting/compare flows are still pending
+- only one hard task is implemented so far
 - Claude Code runs depend on a local authenticated `claude` CLI session

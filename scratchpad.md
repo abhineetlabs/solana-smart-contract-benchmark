@@ -10,7 +10,8 @@
 - Phase 2 core plumbing is complete for the first task.
 - Current completed goal: the benchmark now supports both mock baselines and real Claude Code CLI execution for `counter_authority`.
 - Current completed goal: a second, harder Anchor task (`escrow_basic`) now runs end-to-end with public, hidden, and adversarial suites.
-- Current next goal: add a second track, starting with `counter_authority` on `native`.
+- Current completed goal: `counter_authority` now also runs on a real `native` track backed by `solana-program-test`.
+- Current next goal: add another hard task such as `vault_basic`, then improve reporting/comparison.
 
 ## Decisions Made
 
@@ -27,6 +28,7 @@
 - Run Claude Code benchmark invocations from a temporary clean directory to avoid accidental project-context leakage from the benchmark repo itself.
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
+- Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
 
 ## Environment Notes
 
@@ -42,9 +44,9 @@
 ## Immediate Work Queue
 
 1. Add a second task, preferably `escrow_basic` or `vault_basic`.
-2. Add `native` track support, starting with `counter_authority`.
+2. Add another hard task, likely `vault_basic`.
 3. Improve failure-class mapping from test names and failure payloads.
-4. Add result comparison/reporting helpers once there is more than one meaningful model/task combination.
+4. Add result comparison/reporting helpers now that there are multiple meaningful task/track combinations.
 
 ## Milestones Reached
 
@@ -143,6 +145,23 @@
   - adversarial `1/3`
   - score `0.3833`
   - failure classes: `token_validation`
+- Second track added: `counter_authority` on `native`.
+- `counter_authority/native` verified commands:
+  - `./benchmark warm-cache --track native --task counter_authority`
+  - `./benchmark baseline reference --track native --task counter_authority`
+  - `./benchmark baseline insecure --track native --task counter_authority`
+  - `./benchmark self-check --track native --task counter_authority`
+- Latest verified `counter_authority/native` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `counter_authority/native` insecure result:
+  - public `3/3`
+  - hidden `0/3`
+  - adversarial `1/3`
+  - score `0.5`
+  - failure classes: `signer_validation`
 
 ## Risks / Follow-Ups
 

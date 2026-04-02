@@ -4,7 +4,7 @@
   "category": "state-management",
   "difficulty": "easy",
   "version": "1.0.0",
-  "supportedTracks": ["anchor"],
+  "supportedTracks": ["anchor", "native"],
   "supportedModes": ["generate"],
   "summary": "Implement a simple counter program with initialization, increment, and authority transfer flows.",
   "businessLogic": [
@@ -49,7 +49,8 @@
     "Missing overflow protection."
   ],
   "editableFiles": [
-    "programs/counter_authority/src/lib.rs"
+    "programs/counter_authority/src/lib.rs",
+    "src/lib.rs"
   ],
   "promptAssets": {
     "includePublicTests": true,
@@ -73,6 +74,9 @@
   "trackConfigs": {
     "anchor": {
       "entryFiles": ["programs/counter_authority/src/lib.rs"]
+    },
+    "native": {
+      "entryFiles": ["src/lib.rs"]
     }
   }
 }
