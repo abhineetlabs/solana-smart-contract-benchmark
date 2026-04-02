@@ -14,7 +14,7 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `staking_pool_rewards` on `anchor`
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, and multi-program CPI claim flows
-- mock baselines plus a Claude Code CLI adapter
+- mock baselines plus Claude Code and Codex CLI adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, and compare commands
 
@@ -40,9 +40,39 @@ npm install --ignore-scripts
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards
 ./benchmark run --model mock/starter --track anchor --task vesting_router_cpi
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
+./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run-all --model claude-code/sonnet
 ./benchmark compare
 ./benchmark self-check
+```
+
+## Model Adapters
+
+Built-in model ids currently listed by the CLI:
+
+- `mock/reference`
+- `mock/insecure`
+- `mock/invalid-json`
+- `mock/starter`
+- `claude-code/default`
+- `claude-code/sonnet`
+- `claude-code/opus`
+- `codex/default`
+- `codex-oss/ollama/default`
+- `codex-oss/lmstudio/default`
+
+The Codex adapter also accepts explicit model patterns even when they are not listed verbatim:
+
+- `codex/<model>`
+- `codex-oss/ollama/<model>`
+- `codex-oss/lmstudio/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model codex/default --track anchor --task counter_authority
+./benchmark run --model codex/gpt-5 --track anchor --task vesting_router_cpi
+./benchmark run --model codex-oss/ollama/qwen2.5-coder:32b --track anchor --task escrow_basic
 ```
 
 ## Full Sweep
@@ -87,3 +117,4 @@ Inspect the latest saved sweep report:
 - there is not yet a richer leaderboard-style or HTML reporting layer
 - only two native tasks are implemented so far, and `vault_basic/native` currently validates a pre-created custody token account instead of creating an ATA inside the program
 - Claude Code runs depend on a local authenticated `claude` CLI session
+- Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model

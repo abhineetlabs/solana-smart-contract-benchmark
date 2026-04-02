@@ -14,6 +14,7 @@
 - Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
 - Current completed goal: the benchmark now includes a multi-program CPI repair task, `vesting_router_cpi`, with hidden incremental-claim math and helper-vault binding checks.
 - Current completed goal: `vault_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
+- Current completed goal: the benchmark now supports direct Codex CLI execution, including Codex-authenticated runs and OSS-through-Codex model routes.
 - Current next goal: deepen failure analysis/reporting, add aggregate hard-suite self-checking, and expand the hard set with migration-style tasks.
 
 ## Decisions Made
@@ -28,7 +29,9 @@
 - Use a repo-local localnet wallet in the task starter so the benchmark does not depend on the developer's personal Solana wallet path.
 - Skip runtime-only directories and socket files when copying workspaces into temp runs or persisted artifacts.
 - Use the local `claude` CLI in print mode with tools disabled and structured JSON output so Claude Code subscription plans can be benchmarked without an Anthropic API key.
+- Use the local `codex` CLI in `exec` mode with JSON event output and a stricter file-entry schema so Codex subscription runs and Codex-managed OSS local-provider runs can be benchmarked through the same file-map contract.
 - Run Claude Code benchmark invocations from a temporary clean directory to avoid accidental project-context leakage from the benchmark repo itself.
+- Run Codex benchmark invocations from a temporary clean directory and map Codex's file-entry list output back into the benchmark's file-map JSON shape.
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
@@ -44,6 +47,10 @@
   - `cargo 1.91.1`
   - `anchor-cli 0.32.1`
   - `solana-cli 3.1.11`
+  - `codex-cli 0.114.0`
+- Local OSS providers currently absent:
+  - `ollama` not found
+  - `lmstudio` not found
 
 ## Immediate Work Queue
 
@@ -78,6 +85,11 @@
   - available model ids include `claude-code/default`, `claude-code/sonnet`, and `claude-code/opus`
   - benchmark runs use Claude Code print mode with tools disabled and JSON schema enforcement
   - no Anthropic API key is required if the local Claude Code session is already authenticated
+- Codex CLI adapter implemented:
+  - available listed model ids include `codex/default`, `codex-oss/ollama/default`, and `codex-oss/lmstudio/default`
+  - explicit `codex/<model>` and `codex-oss/<provider>/<model>` ids are also accepted
+  - benchmark runs use `codex exec` with JSON event output, schema-validated file-entry responses, and a temp clean invocation directory
+  - no OpenAI API key is required if the local Codex CLI session is already authenticated
 - Runner now supports:
   - shared benchmark-local Cargo cache via `BENCHMARK_CARGO_HOME`
   - shared benchmark-local Cargo target directory via `BENCHMARK_CARGO_TARGET_DIR`
@@ -93,6 +105,7 @@
   - `./benchmark baseline insecure --track anchor --task counter_authority`
   - `./benchmark run --model mock/invalid-json --track anchor --task counter_authority`
   - `./benchmark run --model claude-code/sonnet --track anchor --task counter_authority`
+  - `./benchmark run --model codex/default --track anchor --task counter_authority`
   - `./benchmark self-check`
 - Latest verified reference-style run result:
   - build passed
@@ -115,6 +128,13 @@
   - model `claude-code/sonnet`
   - build passed
   - public tests passed `3/3`
+  - total score `1.0`
+- Latest verified Codex run result:
+  - model `codex/default`
+  - build passed
+  - public tests passed `3/3`
+  - hidden tests passed `3/3`
+  - adversarial tests passed `3/3`
   - total score `1.0`
 - Latest verified self-check result:
   - reference score `1.0`
