@@ -6,10 +6,10 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
 
-- seven working benchmark pairs:
+- eight working benchmark pairs:
   - `counter_authority` on `anchor` and `native`
   - `escrow_basic` on `anchor`
-  - `vault_basic` on `anchor`
+  - `vault_basic` on `anchor` and `native`
   - `multisig_treasury` on `anchor`
   - `staking_pool_rewards` on `anchor`
   - `vesting_router_cpi` on `anchor`
@@ -29,10 +29,12 @@ npm install --ignore-scripts
 ./benchmark run --model mock/reference --track anchor --task counter_authority
 ./benchmark warm-cache --track anchor --task escrow_basic
 ./benchmark warm-cache --track anchor --task vault_basic
+./benchmark warm-cache --track native --task vault_basic
 ./benchmark warm-cache --track anchor --task multisig_treasury
 ./benchmark warm-cache --track anchor --task staking_pool_rewards
 ./benchmark warm-cache --track anchor --task vesting_router_cpi
 ./benchmark baseline reference --track native --task counter_authority
+./benchmark baseline reference --track native --task vault_basic
 ./benchmark baseline reference --track anchor --task staking_pool_rewards
 ./benchmark baseline reference --track anchor --task vesting_router_cpi
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards
@@ -83,5 +85,5 @@ Inspect the latest saved sweep report:
 
 - retrieval mode is not implemented yet
 - there is not yet a richer leaderboard-style or HTML reporting layer
-- only one native task is implemented so far
+- only two native tasks are implemented so far, and `vault_basic/native` currently validates a pre-created custody token account instead of creating an ATA inside the program
 - Claude Code runs depend on a local authenticated `claude` CLI session

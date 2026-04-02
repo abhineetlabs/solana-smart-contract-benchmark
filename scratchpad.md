@@ -13,7 +13,8 @@
 - Current completed goal: `counter_authority` now also runs on a real `native` track backed by `solana-program-test`.
 - Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
 - Current completed goal: the benchmark now includes a multi-program CPI repair task, `vesting_router_cpi`, with hidden incremental-claim math and helper-vault binding checks.
-- Current next goal: deepen failure analysis/reporting and expand harder tasks onto more tracks, especially onto `native` and with migration-style tasks.
+- Current completed goal: `vault_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
+- Current next goal: deepen failure analysis/reporting, add aggregate hard-suite self-checking, and expand the hard set with migration-style tasks.
 
 ## Decisions Made
 
@@ -31,6 +32,7 @@
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
+- Use a host-side `solana-program-test` native track for `vault_basic`, with the harness pre-creating the custody token account while the program remains responsible for PDA state creation, authority checks, pause control, and accounting invariants.
 
 ## Environment Notes
 
@@ -46,10 +48,10 @@
 ## Immediate Work Queue
 
 1. Improve failure-class mapping from test names and failure payloads.
-2. Add native support for one harder task such as `vault_basic`.
-3. Add a benchmark-local aggregate self-check that exercises all hard tasks in one command.
-4. Add at least one migration-style task with a partially broken starter.
-5. Add richer sweep comparison/reporting that can group by failure category and task family.
+2. Add a benchmark-local aggregate self-check that exercises all hard tasks in one command.
+3. Add at least one migration-style task with a partially broken starter.
+4. Add richer sweep comparison/reporting that can group by failure category and task family.
+5. Bring another hard task or repair task onto `native`.
 
 ## Milestones Reached
 
@@ -338,6 +340,37 @@
     - `vault_basic/anchor`
     - `vesting_router_cpi/anchor`
   - saved report `results/sweeps/2026-04-02T13-12-14-667Z_aa6f63f6.json`
+- Fourth task/track breadth expansion completed: `vault_basic` now also runs on `native`.
+- `vault_basic/native` verified commands:
+  - `./benchmark validate`
+  - `./benchmark warm-cache --track native --task vault_basic`
+  - `./benchmark baseline reference --track native --task vault_basic`
+  - `./benchmark baseline insecure --track native --task vault_basic`
+  - `./benchmark self-check --track native --task vault_basic`
+- Latest verified `vault_basic/native` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `vault_basic/native` insecure result:
+  - public `3/3`
+  - hidden `2/3`
+  - adversarial `1/3`
+  - score `0.6166`
+  - failure classes: `functional_logic`
+- Latest verified hard-only reference sweep:
+  - command `./benchmark run-all --model mock/reference --difficulty hard`
+  - pairs `6`
+  - completed `6`
+  - average score `1.0`
+  - included pairs:
+    - `escrow_basic/anchor`
+    - `multisig_treasury/anchor`
+    - `staking_pool_rewards/anchor`
+    - `vault_basic/anchor`
+    - `vault_basic/native`
+    - `vesting_router_cpi/anchor`
+  - saved report `results/sweeps/2026-04-02T14-20-38-314Z_e0ec9ee2.json`
 
 ## Risks / Follow-Ups
 
@@ -345,5 +378,5 @@
 - The earlier host-side `solana-program-test` route is no longer used because it hits `solana-invoke` behavior that is only implemented on the Solana target.
 - The first Claude Code benchmark run can consume noticeable quota depending on the chosen Claude model and the prompt size.
 - `run-all` is intentionally sequential because Anchor/localnet-backed tracks can contend on validator ports if run in parallel.
-- The new hard tasks currently exist only on `anchor`; the next breadth upgrade should be bringing at least one of them onto `native`.
+- `vault_basic/native` intentionally uses a pre-created custody token account in the harness instead of ATA creation inside the program, because the host-side native track is optimized for PDA and state/accounting logic rather than ATA-program CPI behavior.
 - Hidden and adversarial suite manifests intentionally target the injected temp workspace layout, so committed lockfiles for those suites still require either the warm-cache workflow or a future manifest/layout refinement.

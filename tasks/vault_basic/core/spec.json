@@ -4,7 +4,7 @@
   "category": "vault",
   "difficulty": "hard",
   "version": "1.0.0",
-  "supportedTracks": ["anchor"],
+  "supportedTracks": ["anchor", "native"],
   "supportedModes": ["generate"],
   "summary": "Implement a paused/unpaused SPL token vault with PDA-backed custody and per-user receipt accounting.",
   "businessLogic": [
@@ -71,7 +71,8 @@
     "Missing mint validation for the vault or user token accounts."
   ],
   "editableFiles": [
-    "programs/vault_basic/src/lib.rs"
+    "programs/vault_basic/src/lib.rs",
+    "src/lib.rs"
   ],
   "promptAssets": {
     "includePublicTests": true,
@@ -95,6 +96,9 @@
   "trackConfigs": {
     "anchor": {
       "entryFiles": ["programs/vault_basic/src/lib.rs"]
+    },
+    "native": {
+      "entryFiles": ["src/lib.rs"]
     }
   }
 }

@@ -1,0 +1,17 @@
+[package]
+name = "vault_basic_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+no-entrypoint = []
+
+[dependencies]
+borsh = { version = "1.5.7", features = ["derive"] }
+solana-program = "2.3.0"
+spl-associated-token-account = "7.0.0"
+spl-token = "8.0.0"
