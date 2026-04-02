@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on vault initialization, receipt accounting, deposits, withdrawals, and pause behavior.",
+    "Hidden and adversarial checks focus on over-withdrawal, receipt ownership, admin-only pause control, mint validation, and payout redirection."
+  ]
+}

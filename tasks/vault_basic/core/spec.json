@@ -1,0 +1,100 @@
+{
+  "id": "vault_basic",
+  "title": "Shared SPL Vault With Per-User Receipts",
+  "category": "vault",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["generate"],
+  "summary": "Implement a paused/unpaused SPL token vault with PDA-backed custody and per-user receipt accounting.",
+  "businessLogic": [
+    "An administrator initializes a vault for a single SPL mint with a PDA-controlled token account.",
+    "Users deposit tokens into the vault and accrue balances in receipt PDAs keyed by vault and user.",
+    "Users withdraw only their own deposited balance, and the admin can pause or resume movement."
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "description": "Create vault state, derive the vault authority PDA, and create the custody token account."
+    },
+    {
+      "name": "deposit",
+      "description": "Transfer user funds into the vault and update the user's receipt balance and global totals."
+    },
+    {
+      "name": "withdraw",
+      "description": "Return funds from the vault to the depositing user, signed by the vault authority PDA."
+    },
+    {
+      "name": "set_paused",
+      "description": "Let the admin pause or resume deposits and withdrawals."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "admin",
+      "role": "authority",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "user",
+      "role": "depositor",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "vault_config",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "receipt",
+      "role": "position",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "vault",
+      "role": "custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Vault custody must be controlled by a program-derived authority.",
+    "Receipt PDAs must be bound to the specific vault and user that owns the balance.",
+    "Only the configured admin can pause or resume movement.",
+    "Withdrawals must not exceed the stored receipt balance and must return to a token account owned by the withdrawing user.",
+    "The vault mint, receipt balances, and global accounting totals must remain internally consistent."
+  ],
+  "failureConditions": [
+    "Allowing a user to withdraw from another user's receipt.",
+    "Allowing deposits or withdrawals while the vault is paused.",
+    "Allowing withdrawals to attacker-controlled token accounts.",
+    "Missing mint validation for the vault or user token accounts."
+  ],
+  "editableFiles": [
+    "programs/vault_basic/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/vault_basic/src/lib.rs"]
+    }
+  }
+}

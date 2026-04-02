@@ -1,0 +1,100 @@
+{
+  "id": "multisig_treasury",
+  "title": "Threshold Treasury With Proposal Execution",
+  "category": "multisig",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["generate"],
+  "summary": "Implement a PDA-backed SPL token treasury controlled by threshold approvals and proposal execution.",
+  "businessLogic": [
+    "A creator initializes a treasury configuration with a fixed owner set, threshold, and mint-specific vault.",
+    "Owners create transfer proposals for a specific recipient and amount.",
+    "Owners approve proposals, and any owner can execute a proposal once the threshold is met."
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "description": "Create multisig state, validate the owner set and threshold, derive the treasury PDA, and create the token vault."
+    },
+    {
+      "name": "propose_transfer",
+      "description": "Create a proposal PDA for a recipient and amount, and record the proposer's approval."
+    },
+    {
+      "name": "approve",
+      "description": "Let an owner record one approval for an open proposal without double-counting."
+    },
+    {
+      "name": "execute",
+      "description": "After threshold approval, release funds from the treasury vault to the intended recipient token account and close the proposal."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "creator",
+      "role": "initializer",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "owner",
+      "role": "multisig member",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "multisig",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "proposal",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "vault",
+      "role": "custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Only configured owners may create proposals, approve proposals, or execute transfers.",
+    "Threshold must be positive, must not exceed the owner count, and the owner set must not contain duplicates.",
+    "Approvals must not be double-counted for the same owner.",
+    "Executed transfers must preserve the configured mint and recipient binding stored in the proposal.",
+    "Successful execution must close the proposal so it cannot be replayed."
+  ],
+  "failureConditions": [
+    "Allowing non-owners to approve or execute.",
+    "Allowing duplicate approvals to satisfy threshold.",
+    "Allowing payout to a token account not owned by the intended recipient.",
+    "Allowing execution before the threshold is actually met."
+  ],
+  "editableFiles": [
+    "programs/multisig_treasury/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/multisig_treasury/src/lib.rs"]
+    }
+  }
+}

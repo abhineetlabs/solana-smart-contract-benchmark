@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 
-import { discoverTasks, validateAllTasks } from "../../core/src/index.js";
+import { discoverTasks, validateAllTasks, type Difficulty } from "../../core/src/index.js";
 import { getAvailableModelIds } from "../../model-adapters/src/index.js";
 import {
   loadSweepReports,
@@ -212,6 +212,9 @@ async function handleRunAll(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
     options: {
+      difficulty: {
+        type: "string",
+      },
       model: {
         type: "string",
       },
@@ -239,6 +242,7 @@ async function handleRunAll(args: string[]): Promise<void> {
 
   const report = await runBenchmarkSweep({
     rootDir: process.cwd(),
+    difficulty: values.difficulty as Difficulty | undefined,
     modelId,
     mode: values.mode as "offline" | "retrieval" | undefined,
     track: values.track as "anchor" | "native" | "pinocchio" | undefined,
@@ -415,8 +419,9 @@ function printSweepReport(report: SweepReport): void {
   );
   console.log("Pairs:");
   console.log(
-    formatRow([
+    formatReportRow([
       "task",
+      "difficulty",
       "track",
       "status",
       "score",
@@ -429,8 +434,9 @@ function printSweepReport(report: SweepReport): void {
   );
   for (const entry of report.entries) {
     console.log(
-      formatRow([
+      formatReportRow([
         entry.taskId,
+        entry.difficulty,
         entry.track,
         entry.status,
         formatScore(entry.score),
@@ -448,11 +454,11 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatRow(["sweep", "model", "pairs", "completed", "failed", "build", "average"]),
+    formatOverviewRow(["sweep", "model", "pairs", "completed", "failed", "build", "average"]),
   );
   for (const report of reports) {
     console.log(
-      formatRow([
+      formatOverviewRow([
         report.sweepId,
         report.modelId,
         String(report.summary.totalTargets),
@@ -465,8 +471,17 @@ function printSweepOverview(reports: SweepReport[]): void {
   }
 }
 
-function formatRow(values: string[]): string {
-  const widths = [22, 10, 10, 8, 8, 10, 10, 13, 24];
+function formatReportRow(values: string[]): string {
+  const widths = [22, 10, 10, 10, 8, 8, 10, 10, 13, 24];
+  return formatRow(values, widths);
+}
+
+function formatOverviewRow(values: string[]): string {
+  const widths = [32, 20, 8, 10, 8, 8, 8];
+  return formatRow(values, widths);
+}
+
+function formatRow(values: string[], widths: number[]): string {
   return values
     .map((value, index) => value.padEnd(widths[index] ?? value.length))
     .join(" ")
@@ -487,7 +502,7 @@ function printHelp(): void {
   benchmark list tasks
   benchmark list models
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--track <track>] [--task <task>] [--warm-cache]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>]

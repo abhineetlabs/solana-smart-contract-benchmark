@@ -4,11 +4,14 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 ## Current Status
 
-The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The first milestone is:
+The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
 
-- two working benchmark slices:
+- five working benchmark pairs:
   - `counter_authority` on `anchor` and `native`
   - `escrow_basic` on `anchor`
+  - `vault_basic` on `anchor`
+  - `multisig_treasury` on `anchor`
+- a more demanding task mix focused on PDA custody, per-user accounting, and threshold-controlled treasury execution
 - mock baselines plus a Claude Code CLI adapter
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, and compare commands
@@ -23,6 +26,8 @@ npm install --ignore-scripts
 ./benchmark warm-cache --track anchor --task counter_authority
 ./benchmark run --model mock/reference --track anchor --task counter_authority
 ./benchmark warm-cache --track anchor --task escrow_basic
+./benchmark warm-cache --track anchor --task vault_basic
+./benchmark warm-cache --track anchor --task multisig_treasury
 ./benchmark baseline reference --track native --task counter_authority
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run-all --model claude-code/sonnet
@@ -36,11 +41,13 @@ Run the whole currently supported benchmark matrix for a model:
 
 ```bash
 ./benchmark run-all --model claude-code/sonnet
+./benchmark run-all --model claude-code/sonnet --difficulty hard
 ```
 
 Optional filters:
 
 ```bash
+./benchmark run-all --model claude-code/sonnet --difficulty hard
 ./benchmark run-all --model claude-code/sonnet --track anchor
 ./benchmark run-all --model claude-code/sonnet --task escrow_basic
 ./benchmark run-all --model claude-code/sonnet --warm-cache
@@ -59,6 +66,7 @@ Inspect the latest saved sweep report:
 - task completion behavior
 - security-aware task structure
 - framework-specific implementation fluency
+- multi-instruction state-machine reasoning
 - reproducible offline evaluation
 
 ## Current Limitations

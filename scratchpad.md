@@ -12,7 +12,8 @@
 - Current completed goal: a second, harder Anchor task (`escrow_basic`) now runs end-to-end with public, hidden, and adversarial suites.
 - Current completed goal: `counter_authority` now also runs on a real `native` track backed by `solana-program-test`.
 - Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
-- Current next goal: add another hard task such as `vault_basic`, then deepen failure analysis/reporting.
+- Current completed goal: the benchmark now includes two additional hard Anchor tasks, `vault_basic` and `multisig_treasury`.
+- Current next goal: deepen failure analysis/reporting and expand harder tasks onto more tracks.
 
 ## Decisions Made
 
@@ -45,10 +46,10 @@
 ## Immediate Work Queue
 
 1. Add a second task, preferably `escrow_basic` or `vault_basic`.
-2. Add another hard task, likely `vault_basic`.
-3. Improve failure-class mapping from test names and failure payloads.
-4. Add another hard task, likely `vault_basic`.
-5. Expand reporting beyond terminal tables into richer result analysis.
+2. Improve failure-class mapping from test names and failure payloads.
+3. Add native support for one harder task such as `vault_basic`.
+4. Expand reporting beyond terminal tables into richer result analysis.
+5. Add a benchmark-local aggregate self-check that exercises all hard tasks in one command.
 
 ## Milestones Reached
 
@@ -186,6 +187,74 @@
 - Latest verified compare output:
   - `./benchmark compare` loads the newest sweep successfully
   - `./benchmark compare --latest 2` prints both the insecure and reference sweeps in descending time order
+- Third task added from the blueprint: `vault_basic` on `anchor`.
+- `vault_basic` covers:
+  - PDA-derived vault state and authority
+  - per-user receipt PDAs
+  - paused/unpaused movement control
+  - deposit and withdraw accounting with asset conservation checks
+- `vault_basic` verified commands:
+  - `./benchmark warm-cache --track anchor --task vault_basic`
+  - `./benchmark baseline reference --track anchor --task vault_basic`
+  - `./benchmark baseline insecure --track anchor --task vault_basic`
+  - `./benchmark self-check --track anchor --task vault_basic`
+- Latest verified `vault_basic` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `vault_basic` insecure result:
+  - public `2/3`
+  - hidden `2/3`
+  - adversarial `1/3`
+  - score `0.5666`
+  - failure classes: `functional_logic`
+- New hard task added beyond the original v1 trio: `multisig_treasury` on `anchor`.
+- `multisig_treasury` covers:
+  - validated owner sets and thresholds
+  - proposal PDA lifecycle
+  - duplicate-approval prevention
+  - threshold-gated SPL treasury execution
+  - payout recipient validation and replay resistance
+- `multisig_treasury` verified commands:
+  - `./benchmark warm-cache --track anchor --task multisig_treasury`
+  - `./benchmark baseline reference --track anchor --task multisig_treasury`
+  - `./benchmark baseline insecure --track anchor --task multisig_treasury`
+  - `./benchmark self-check --track anchor --task multisig_treasury`
+- Latest verified `multisig_treasury` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `multisig_treasury` insecure result:
+  - public `3/3`
+  - hidden `1/3`
+  - adversarial `1/3`
+  - score `0.5`
+  - failure classes: `ownership_validation`
+- Latest verified full reference sweep:
+  - model `mock/reference`
+  - pairs `5`
+  - completed `5`
+  - average score `1.0`
+  - included pairs:
+    - `counter_authority/anchor`
+    - `counter_authority/native`
+    - `escrow_basic/anchor`
+    - `vault_basic/anchor`
+    - `multisig_treasury/anchor`
+  - saved report `results/sweeps/2026-04-02T11-32-38-366Z_485f2836.json`
+- `run-all` now supports a `--difficulty <level>` filter so challenging sweeps can exclude easy starter tasks.
+- Latest verified hard-only reference sweep:
+  - command `./benchmark run-all --model mock/reference --difficulty hard`
+  - pairs `3`
+  - completed `3`
+  - average score `1.0`
+  - included pairs:
+    - `escrow_basic/anchor`
+    - `multisig_treasury/anchor`
+    - `vault_basic/anchor`
+  - saved report `results/sweeps/2026-04-02T11-44-10-797Z_fd4de935.json`
 
 ## Risks / Follow-Ups
 
@@ -193,4 +262,5 @@
 - The earlier host-side `solana-program-test` route is no longer used because it hits `solana-invoke` behavior that is only implemented on the Solana target.
 - The first Claude Code benchmark run can consume noticeable quota depending on the chosen Claude model and the prompt size.
 - `run-all` is intentionally sequential because Anchor/localnet-backed tracks can contend on validator ports if run in parallel.
+- The new hard tasks currently exist only on `anchor`; the next breadth upgrade should be bringing at least one of them onto `native`.
 - Hidden and adversarial suite manifests intentionally target the injected temp workspace layout, so committed lockfiles for those suites still require either the warm-cache workflow or a future manifest/layout refinement.

@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on multisig initialization, proposal creation, approval tracking, execution, and proposal closure.",
+    "Hidden and adversarial checks focus on threshold enforcement, non-owner access, duplicate approvals, payout redirection, and replay resistance."
+  ]
+}

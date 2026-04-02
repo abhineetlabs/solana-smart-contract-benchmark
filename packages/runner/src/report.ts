@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
-import { discoverTasks, type InvocationMode, type TrackId } from "../../core/src/index.js";
+import {
+  discoverTasks,
+  type Difficulty,
+  type InvocationMode,
+  type TrackId,
+} from "../../core/src/index.js";
 import { ensureDir, pathExists, readJsonFile, writeJsonFile } from "../../shared/src/index.js";
 import { runBenchmark, type AttemptResult } from "./run.js";
 import { warmTaskCache } from "./warm.js";
@@ -10,14 +15,14 @@ import { warmTaskCache } from "./warm.js";
 export interface BenchmarkTarget {
   taskId: string;
   track: TrackId;
-  difficulty: string;
+  difficulty: Difficulty;
   title: string;
 }
 
 export interface SweepEntry {
   taskId: string;
   track: TrackId;
-  difficulty: string;
+  difficulty: Difficulty;
   title: string;
   runId: string;
   attemptId: string;
@@ -54,6 +59,7 @@ interface RunBenchmarkSweepArgs {
   mode?: InvocationMode;
   track?: TrackId;
   taskId?: string;
+  difficulty?: Difficulty;
   warmCache?: boolean;
 }
 
@@ -68,12 +74,17 @@ export async function listBenchmarkTargets(args: {
   rootDir: string;
   track?: TrackId;
   taskId?: string;
+  difficulty?: Difficulty;
 }): Promise<BenchmarkTarget[]> {
   const tasks = await discoverTasks(args.rootDir);
   const targets: BenchmarkTarget[] = [];
 
   for (const task of tasks) {
     if (args.taskId && task.id !== args.taskId) {
+      continue;
+    }
+
+    if (args.difficulty && task.spec.difficulty !== args.difficulty) {
       continue;
     }
 
@@ -111,6 +122,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     rootDir: args.rootDir,
     track: args.track,
     taskId: args.taskId,
+    difficulty: args.difficulty,
   });
 
   if (targets.length === 0) {
