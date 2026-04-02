@@ -245,6 +245,7 @@
     - `multisig_treasury/anchor`
   - saved report `results/sweeps/2026-04-02T11-32-38-366Z_485f2836.json`
 - `run-all` now supports a `--difficulty <level>` filter so challenging sweeps can exclude easy starter tasks.
+- Sweep report rendering now shows `skipped` for test stages when a pair fails at build time, instead of misleading `0/0` stage counts.
 - Latest verified hard-only reference sweep:
   - command `./benchmark run-all --model mock/reference --difficulty hard`
   - pairs `3`

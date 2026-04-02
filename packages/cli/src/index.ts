@@ -441,9 +441,9 @@ function printSweepReport(report: SweepReport): void {
         entry.status,
         formatScore(entry.score),
         entry.buildSuccess ? "pass" : "fail",
-        formatStageRatio(entry.tests.public.passed, entry.tests.public.total),
-        formatStageRatio(entry.tests.hidden.passed, entry.tests.hidden.total),
-        formatStageRatio(entry.tests.adversarial.passed, entry.tests.adversarial.total),
+        formatStageSummary(entry.buildSuccess, entry.tests.public.passed, entry.tests.public.total),
+        formatStageSummary(entry.buildSuccess, entry.tests.hidden.passed, entry.tests.hidden.total),
+        formatStageSummary(entry.buildSuccess, entry.tests.adversarial.passed, entry.tests.adversarial.total),
         entry.failureClasses.join(",") || "none",
       ]),
     );
@@ -490,6 +490,14 @@ function formatRow(values: string[], widths: number[]): string {
 
 function formatStageRatio(passed: number, total: number): string {
   return `${passed}/${total}`;
+}
+
+function formatStageSummary(buildSuccess: boolean, passed: number, total: number): string {
+  if (!buildSuccess && total === 0) {
+    return "skipped";
+  }
+
+  return formatStageRatio(passed, total);
 }
 
 function formatScore(value: number): string {
