@@ -1,17 +1,18 @@
 # Solana Smart Contract Benchmark
 
-Local benchmark harness for evaluating LLM performance on Solana smart contract generation tasks.
+Local benchmark harness for evaluating LLM performance on Solana smart contract generation and repair tasks.
 
 ## Current Status
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
 
-- five working benchmark pairs:
+- six working benchmark pairs:
   - `counter_authority` on `anchor` and `native`
   - `escrow_basic` on `anchor`
   - `vault_basic` on `anchor`
   - `multisig_treasury` on `anchor`
-- a more demanding task mix focused on PDA custody, per-user accounting, and threshold-controlled treasury execution
+  - `staking_pool_rewards` on `anchor`
+- a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, and repair-style reward-accounting bugs
 - mock baselines plus a Claude Code CLI adapter
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, and compare commands
@@ -28,7 +29,10 @@ npm install --ignore-scripts
 ./benchmark warm-cache --track anchor --task escrow_basic
 ./benchmark warm-cache --track anchor --task vault_basic
 ./benchmark warm-cache --track anchor --task multisig_treasury
+./benchmark warm-cache --track anchor --task staking_pool_rewards
 ./benchmark baseline reference --track native --task counter_authority
+./benchmark baseline reference --track anchor --task staking_pool_rewards
+./benchmark run --model mock/starter --track anchor --task staking_pool_rewards
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run-all --model claude-code/sonnet
 ./benchmark compare
@@ -67,6 +71,7 @@ Inspect the latest saved sweep report:
 - security-aware task structure
 - framework-specific implementation fluency
 - multi-instruction state-machine reasoning
+- repair ability on partially broken smart-contract starters
 - reproducible offline evaluation
 
 ## Current Limitations

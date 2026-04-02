@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on initialization, basic staking, single-epoch reward distribution, and weighted reward splits.",
+    "Hidden and adversarial checks focus on reward-debt accounting across interleaved stake changes, zero-staker reward deposits, and unauthorized position access."
+  ]
+}

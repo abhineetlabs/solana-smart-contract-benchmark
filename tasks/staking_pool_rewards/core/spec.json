@@ -1,0 +1,109 @@
+{
+  "id": "staking_pool_rewards",
+  "title": "Repair Staking Pool Reward Accounting",
+  "category": "staking",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["repair"],
+  "summary": "Repair a partially working staking pool that uses reward-per-share accounting, PDA vault custody, and per-user position PDAs.",
+  "businessLogic": [
+    "An admin initializes a pool for one stake mint and one reward mint, with PDA-owned stake and reward vaults.",
+    "Users stake into the pool through position PDAs that track stake amount, pending rewards, and reward debt.",
+    "The admin deposits reward tokens into the reward vault, and rewards must be distributed proportionally across active stakers without erasing already-accrued rewards."
+  ],
+  "instructions": [
+    {
+      "name": "initialize",
+      "description": "Create the pool configuration PDA, derive the pool authority PDA, and create the stake and reward vault token accounts bound to the configured mints."
+    },
+    {
+      "name": "deposit_rewards",
+      "description": "Let the admin deposit reward tokens into the reward vault and update the global accumulated reward-per-share value only when there are active stakers."
+    },
+    {
+      "name": "stake",
+      "description": "Allow a user to create or reuse a position PDA, preserve any already-earned rewards, and move stake tokens into the pool stake vault."
+    },
+    {
+      "name": "unstake",
+      "description": "Allow only the position owner to withdraw stake from the pool while preserving already-accrued rewards and keeping pool totals correct."
+    },
+    {
+      "name": "claim",
+      "description": "Allow only the position owner to claim exactly their pending rewards from the reward vault into their own reward token account."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "admin",
+      "role": "initializer and reward distributor",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "user",
+      "role": "staker and claimant",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "pool",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "position",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "stake_vault",
+      "role": "stake custody",
+      "constraints": ["associated-token", "writable"]
+    },
+    {
+      "name": "reward_vault",
+      "role": "reward custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Only the configured admin may deposit rewards, and reward deposits must fail when the pool has no active stakers.",
+    "Position PDAs must stay bound to exactly one pool and one owner.",
+    "Changing a user's stake amount after rewards have accrued must not erase the rewards they already earned.",
+    "Only the position owner may unstake or claim from that position.",
+    "Reward claims must transfer only the rewards actually owed, leaving any rounding dust in the reward vault."
+  ],
+  "failureConditions": [
+    "Losing already-accrued rewards when a user stakes more or partially unstakes between reward epochs.",
+    "Allowing reward deposits to succeed when no users are staked.",
+    "Allowing an attacker to claim rewards or unstake funds from another user's position.",
+    "Allowing a position account to be used against the wrong pool without explicit validation."
+  ],
+  "editableFiles": [
+    "programs/staking_pool_rewards/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/staking_pool_rewards/src/lib.rs"]
+    }
+  }
+}

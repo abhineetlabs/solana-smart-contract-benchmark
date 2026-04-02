@@ -117,9 +117,9 @@ export interface AttemptResult {
 
 export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: AttemptResult; attemptDir: string }> {
   const mode = args.mode ?? "offline";
-  const interactionMode = args.interactionMode ?? "generate";
   const temperature = args.temperature ?? 0;
   const task = await loadRequiredTask(args.rootDir, args.taskId);
+  const interactionMode = args.interactionMode ?? task.spec.supportedModes[0] ?? "generate";
   const track = loadRequiredTrack(task, args.track);
 
   const runId = createRunId();
