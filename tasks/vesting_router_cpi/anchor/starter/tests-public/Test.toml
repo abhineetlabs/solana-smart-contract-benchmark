@@ -1,0 +1,2 @@
+[scripts]
+test = "cargo test --locked --manifest-path tests-public/Cargo.toml --target-dir \"${BENCHMARK_CARGO_TARGET_DIR:-target/benchmark-tests}\" -- --nocapture"

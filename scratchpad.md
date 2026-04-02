@@ -12,8 +12,8 @@
 - Current completed goal: a second, harder Anchor task (`escrow_basic`) now runs end-to-end with public, hidden, and adversarial suites.
 - Current completed goal: `counter_authority` now also runs on a real `native` track backed by `solana-program-test`.
 - Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
-- Current completed goal: the benchmark now includes a repair-style hard Anchor task, `staking_pool_rewards`, with hidden reward-accounting and unauthorized-position checks.
-- Current next goal: deepen failure analysis/reporting and expand harder tasks onto more tracks, especially with more repair and multi-program tasks.
+- Current completed goal: the benchmark now includes a multi-program CPI repair task, `vesting_router_cpi`, with hidden incremental-claim math and helper-vault binding checks.
+- Current next goal: deepen failure analysis/reporting and expand harder tasks onto more tracks, especially onto `native` and with migration-style tasks.
 
 ## Decisions Made
 
@@ -48,8 +48,8 @@
 1. Improve failure-class mapping from test names and failure payloads.
 2. Add native support for one harder task such as `vault_basic`.
 3. Add a benchmark-local aggregate self-check that exercises all hard tasks in one command.
-4. Add at least one multi-program CPI task.
-5. Add at least one additional repair/migration task with a partially broken starter.
+4. Add at least one migration-style task with a partially broken starter.
+5. Add richer sweep comparison/reporting that can group by failure category and task family.
 
 ## Milestones Reached
 
@@ -297,6 +297,47 @@
     - `staking_pool_rewards/anchor`
     - `vault_basic/anchor`
   - saved report `results/sweeps/2026-04-02T12-40-01-239Z_e4478253.json`
+- New multi-program CPI repair task added: `vesting_router_cpi` on `anchor`.
+- `vesting_router_cpi` covers:
+  - router-authority PDAs controlling claims through a fixed helper vault program
+  - admin-funded cliff vesting schedules with monotonic round advancement
+  - incremental claim math across repeated claims
+  - beneficiary binding, payout-token ownership checks, and helper-vault substitution resistance
+- `vesting_router_cpi` verified commands:
+  - `./benchmark validate`
+  - `./benchmark warm-cache --track anchor --task vesting_router_cpi`
+  - `./benchmark baseline reference --track anchor --task vesting_router_cpi`
+  - `./benchmark baseline insecure --track anchor --task vesting_router_cpi`
+  - `./benchmark run --model mock/starter --track anchor --task vesting_router_cpi`
+  - `./benchmark self-check --track anchor --task vesting_router_cpi`
+- Latest verified `vesting_router_cpi` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `2/2`
+- Latest verified `vesting_router_cpi` insecure result:
+  - public `3/3`
+  - hidden `0/3`
+  - adversarial `1/2`
+  - score `0.45`
+  - failure classes: `token_validation`
+- Latest verified `vesting_router_cpi` starter result:
+  - build passed
+  - public `3/3`
+  - hidden/adversarial intentionally fail under the full benchmark path
+  - score `0.45`
+- Latest verified hard-only reference sweep:
+  - command `./benchmark run-all --model mock/reference --difficulty hard`
+  - pairs `5`
+  - completed `5`
+  - average score `1.0`
+  - included pairs:
+    - `escrow_basic/anchor`
+    - `multisig_treasury/anchor`
+    - `staking_pool_rewards/anchor`
+    - `vault_basic/anchor`
+    - `vesting_router_cpi/anchor`
+  - saved report `results/sweeps/2026-04-02T13-12-14-667Z_aa6f63f6.json`
 
 ## Risks / Follow-Ups
 

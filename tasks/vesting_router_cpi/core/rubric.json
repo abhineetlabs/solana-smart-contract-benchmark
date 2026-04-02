@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on stream initialization, single-tranche claiming after a cliff, and final full payout behavior.",
+    "Hidden and adversarial checks focus on incremental claim math, admin-only round advancement, beneficiary binding, and payout redirection."
+  ]
+}

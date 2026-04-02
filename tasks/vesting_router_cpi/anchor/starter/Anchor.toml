@@ -1,0 +1,15 @@
+[toolchain]
+anchor_version = "0.32.1"
+package_manager = "npm"
+
+[programs.localnet]
+vesting_router_cpi = "3BwUkQMtq1YmJ7JZvRdTZTQQY39mGnbfYbpEXRXsB7Mg"
+guarded_vault = "Fg6PaFpoGXkYsidMpWxTWqkZNNpJpY9JxQouXnFxxkJ7"
+
+[provider]
+cluster = "localnet"
+wallet = "wallets/localnet.json"
+
+[features]
+resolution = true
+skip-lint = true

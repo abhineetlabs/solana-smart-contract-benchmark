@@ -1,0 +1,28 @@
+[package]
+name = "vesting_router_cpi"
+version = "0.1.0"
+description = "Cliff vesting router repair task for Solana benchmark testing"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "vesting_router_cpi"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = "0.32.1"
+anchor-spl = "0.32.1"
+guarded_vault = { path = "../guarded_vault", features = ["cpi"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

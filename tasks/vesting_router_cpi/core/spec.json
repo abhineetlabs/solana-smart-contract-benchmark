@@ -1,0 +1,105 @@
+{
+  "id": "vesting_router_cpi",
+  "title": "Repair Cliff Vesting Router With CPI Claims",
+  "category": "vesting",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["repair"],
+  "summary": "Repair a partially working vesting router that controls token payouts through a helper vault program via CPI.",
+  "businessLogic": [
+    "An admin initializes a vesting stream for one beneficiary, one mint, a cliff round, and a total number of rounds.",
+    "A helper guarded-vault program holds custody, and the router program must release vested funds through CPI using its authority PDA.",
+    "The admin funds the full stream once and advances rounds over time, while the beneficiary may claim only the newly vested delta."
+  ],
+  "instructions": [
+    {
+      "name": "initialize_stream",
+      "description": "Create stream state, derive the router authority PDA, and CPI into the guarded-vault helper to create the custody vault."
+    },
+    {
+      "name": "fund",
+      "description": "Let the admin fund the stream exactly once by transferring the full vesting amount into the helper vault."
+    },
+    {
+      "name": "advance_round",
+      "description": "Let only the admin advance the stream's current round monotonically up to the configured total number of rounds."
+    },
+    {
+      "name": "claim",
+      "description": "Let only the configured beneficiary claim the newly vested delta into a token account they actually own, using a CPI release from the helper vault."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "admin",
+      "role": "initializer and reward distributor",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "beneficiary",
+      "role": "claimant",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "stream",
+      "role": "state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "router_authority",
+      "role": "cpi authority",
+      "constraints": ["pda"]
+    },
+    {
+      "name": "vault",
+      "role": "helper state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "vault_token",
+      "role": "custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Only the configured admin may fund the stream or advance rounds.",
+    "Only the configured beneficiary may claim from the stream.",
+    "Repeated claims across rounds must release only the newly vested delta, never the full vested amount again.",
+    "Claims must go through the guarded-vault helper via CPI using the router authority PDA.",
+    "Claim payouts must go only to a token account owned by the beneficiary and using the configured mint."
+  ],
+  "failureConditions": [
+    "Paying the full vested amount on every claim instead of subtracting already claimed amounts.",
+    "Allowing non-admin signers to advance rounds or fund the stream.",
+    "Allowing a non-beneficiary signer to claim from the stream.",
+    "Allowing the beneficiary to redirect a valid claim into an attacker-owned token account."
+  ],
+  "editableFiles": [
+    "programs/vesting_router_cpi/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/vesting_router_cpi/src/lib.rs"]
+    }
+  }
+}
