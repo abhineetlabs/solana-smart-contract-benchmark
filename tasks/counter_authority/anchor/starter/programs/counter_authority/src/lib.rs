@@ -14,7 +14,8 @@ pub mod counter_authority {
         todo!("authorize signer and increment count");
     }
 
-    pub fn set_authority(_ctx: Context<SetAuthority>, _new_authority: Pubkey) -> Result<()> {
+    pub fn set_authority(_ctx: Context<SetAuthority>, new_authority: Pubkey) -> Result<()> {
+        let _ = new_authority;
         todo!("authorize signer and update authority");
     }
 }

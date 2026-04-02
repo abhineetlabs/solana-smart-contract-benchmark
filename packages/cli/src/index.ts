@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 
 import { discoverTasks, validateAllTasks } from "../../core/src/index.js";
 import { getAvailableModelIds } from "../../model-adapters/src/index.js";
-import { runBenchmark } from "../../runner/src/index.js";
+import { runBenchmark, warmTaskCache } from "../../runner/src/index.js";
 
 async function main(): Promise<void> {
   const [, , ...args] = process.argv;
@@ -32,6 +32,11 @@ async function main(): Promise<void> {
 
   if (command === "baseline") {
     await handleBaseline(args.slice(1));
+    return;
+  }
+
+  if (command === "warm-cache") {
+    await handleWarmCache(args.slice(1));
     return;
   }
 
@@ -262,6 +267,40 @@ async function handleSelfCheck(args: string[]): Promise<void> {
   console.log("Self-check passed.");
 }
 
+async function handleWarmCache(args: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      track: {
+        type: "string",
+      },
+      task: {
+        type: "string",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const track = values.track;
+  const taskId = values.task;
+
+  if (!track || !taskId) {
+    throw new Error("warm-cache requires --track and --task.");
+  }
+
+  const result = await warmTaskCache({
+    rootDir: process.cwd(),
+    track: track as "anchor" | "native" | "pinocchio",
+    taskId,
+  });
+
+  console.log(`Warm-cache complete: ${result.taskId} (${result.track})`);
+  for (const step of result.steps) {
+    console.log(`- ${step.name}: ${step.success ? "ok" : "fail"} (${step.durationMs} ms)`);
+  }
+}
+
 function printHelp(): void {
   console.log(`Usage:
   benchmark validate
@@ -269,6 +308,7 @@ function printHelp(): void {
   benchmark list models
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
   benchmark baseline <reference|insecure> --track <track> --task <task>
+  benchmark warm-cache --track <track> --task <task>
   benchmark self-check [--track <track>] [--task <task>]`);
 }
 

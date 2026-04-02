@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, access, cp, lstat, readdir } from "node:fs/
 import { constants } from "node:fs";
 import path from "node:path";
 
-const SKIPPED_COPY_ENTRIES = new Set([".anchor", ".tooling", "node_modules", "target"]);
+const SKIPPED_RUNTIME_ENTRIES = new Set([".anchor", ".tooling", "node_modules", "target"]);
 
 export async function pathExists(targetPath: string): Promise<boolean> {
   try {
@@ -54,6 +54,10 @@ async function walk(rootDir: string, currentDir: string, output: string[]): Prom
   const entries = await readdir(currentDir, { withFileTypes: true });
 
   for (const entry of entries) {
+    if (SKIPPED_RUNTIME_ENTRIES.has(entry.name)) {
+      continue;
+    }
+
     const absolutePath = path.join(currentDir, entry.name);
     if (entry.isDirectory()) {
       await walk(rootDir, absolutePath, output);
@@ -69,7 +73,7 @@ export function toPosixPath(value: string): string {
 }
 
 async function shouldCopyPath(sourcePath: string): Promise<boolean> {
-  if (SKIPPED_COPY_ENTRIES.has(path.basename(sourcePath))) {
+  if (SKIPPED_RUNTIME_ENTRIES.has(path.basename(sourcePath))) {
     return false;
   }
 
