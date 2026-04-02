@@ -3,7 +3,13 @@ import { parseArgs } from "node:util";
 
 import { discoverTasks, validateAllTasks } from "../../core/src/index.js";
 import { getAvailableModelIds } from "../../model-adapters/src/index.js";
-import { runBenchmark, warmTaskCache } from "../../runner/src/index.js";
+import {
+  loadSweepReports,
+  runBenchmark,
+  runBenchmarkSweep,
+  warmTaskCache,
+  type SweepReport,
+} from "../../runner/src/index.js";
 
 async function main(): Promise<void> {
   const [, , ...args] = process.argv;
@@ -35,8 +41,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "run-all") {
+    await handleRunAll(args.slice(1));
+    return;
+  }
+
   if (command === "warm-cache") {
     await handleWarmCache(args.slice(1));
+    return;
+  }
+
+  if (command === "compare") {
+    await handleCompare(args.slice(1));
     return;
   }
 
@@ -192,6 +208,51 @@ async function handleBaseline(args: string[]): Promise<void> {
   console.log(`Failure classes: ${execution.result.failureClasses.join(", ") || "none"}`);
 }
 
+async function handleRunAll(args: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      model: {
+        type: "string",
+      },
+      mode: {
+        type: "string",
+      },
+      track: {
+        type: "string",
+      },
+      task: {
+        type: "string",
+      },
+      "warm-cache": {
+        type: "boolean",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const modelId = values.model;
+  if (!modelId) {
+    throw new Error("run-all requires --model.");
+  }
+
+  const report = await runBenchmarkSweep({
+    rootDir: process.cwd(),
+    modelId,
+    mode: values.mode as "offline" | "retrieval" | undefined,
+    track: values.track as "anchor" | "native" | "pinocchio" | undefined,
+    taskId: values.task,
+    warmCache: values["warm-cache"],
+  });
+
+  printSweepReport(report);
+
+  if (report.summary.failedTargets > 0) {
+    process.exitCode = 1;
+  }
+}
+
 async function handleSelfCheck(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
@@ -301,14 +362,135 @@ async function handleWarmCache(args: string[]): Promise<void> {
   }
 }
 
+async function handleCompare(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: {
+      latest: {
+        type: "string",
+      },
+      model: {
+        type: "string",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const latest = values.latest ? Number(values.latest) : undefined;
+  if (values.latest && (!Number.isInteger(latest) || (latest ?? 0) <= 0)) {
+    throw new Error("compare --latest must be a positive integer.");
+  }
+
+  const reports = await loadSweepReports({
+    rootDir: process.cwd(),
+    sweepIds: positionals.length > 0 ? positionals : undefined,
+    latest: positionals.length > 0 ? undefined : (latest ?? 1),
+    modelId: values.model,
+  });
+
+  if (reports.length === 0) {
+    throw new Error("No matching sweep reports found.");
+  }
+
+  if (reports.length === 1) {
+    const [report] = reports;
+    if (!report) {
+      throw new Error("No matching sweep reports found.");
+    }
+    printSweepReport(report);
+    return;
+  }
+
+  printSweepOverview(reports);
+}
+
+function printSweepReport(report: SweepReport): void {
+  console.log(`Sweep: ${report.sweepId}`);
+  console.log(`Model: ${report.modelId}`);
+  console.log(`Mode: ${report.mode}`);
+  console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
+  console.log(
+    `Summary: pairs ${report.summary.totalTargets}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, build ${report.summary.buildPassedTargets}/${report.summary.totalTargets}, average ${formatScore(report.summary.averageScore)}`,
+  );
+  console.log("Pairs:");
+  console.log(
+    formatRow([
+      "task",
+      "track",
+      "status",
+      "score",
+      "build",
+      "public",
+      "hidden",
+      "adversarial",
+      "failure",
+    ]),
+  );
+  for (const entry of report.entries) {
+    console.log(
+      formatRow([
+        entry.taskId,
+        entry.track,
+        entry.status,
+        formatScore(entry.score),
+        entry.buildSuccess ? "pass" : "fail",
+        formatStageRatio(entry.tests.public.passed, entry.tests.public.total),
+        formatStageRatio(entry.tests.hidden.passed, entry.tests.hidden.total),
+        formatStageRatio(entry.tests.adversarial.passed, entry.tests.adversarial.total),
+        entry.failureClasses.join(",") || "none",
+      ]),
+    );
+  }
+  console.log(`Report: results/sweeps/${report.sweepId}.json`);
+}
+
+function printSweepOverview(reports: SweepReport[]): void {
+  console.log("Sweep comparison:");
+  console.log(
+    formatRow(["sweep", "model", "pairs", "completed", "failed", "build", "average"]),
+  );
+  for (const report of reports) {
+    console.log(
+      formatRow([
+        report.sweepId,
+        report.modelId,
+        String(report.summary.totalTargets),
+        String(report.summary.completedTargets),
+        String(report.summary.failedTargets),
+        formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets),
+        formatScore(report.summary.averageScore),
+      ]),
+    );
+  }
+}
+
+function formatRow(values: string[]): string {
+  const widths = [22, 10, 10, 8, 8, 10, 10, 13, 24];
+  return values
+    .map((value, index) => value.padEnd(widths[index] ?? value.length))
+    .join(" ")
+    .trimEnd();
+}
+
+function formatStageRatio(passed: number, total: number): string {
+  return `${passed}/${total}`;
+}
+
+function formatScore(value: number): string {
+  return value.toFixed(4);
+}
+
 function printHelp(): void {
   console.log(`Usage:
   benchmark validate
   benchmark list tasks
   benchmark list models
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--track <track>] [--task <task>] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
+  benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>]
   benchmark self-check [--track <track>] [--task <task>]`);
 }
 

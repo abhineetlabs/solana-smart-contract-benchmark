@@ -11,7 +11,8 @@
 - Current completed goal: the benchmark now supports both mock baselines and real Claude Code CLI execution for `counter_authority`.
 - Current completed goal: a second, harder Anchor task (`escrow_basic`) now runs end-to-end with public, hidden, and adversarial suites.
 - Current completed goal: `counter_authority` now also runs on a real `native` track backed by `solana-program-test`.
-- Current next goal: add another hard task such as `vault_basic`, then improve reporting/comparison.
+- Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
+- Current next goal: add another hard task such as `vault_basic`, then deepen failure analysis/reporting.
 
 ## Decisions Made
 
@@ -46,7 +47,8 @@
 1. Add a second task, preferably `escrow_basic` or `vault_basic`.
 2. Add another hard task, likely `vault_basic`.
 3. Improve failure-class mapping from test names and failure payloads.
-4. Add result comparison/reporting helpers now that there are multiple meaningful task/track combinations.
+4. Add another hard task, likely `vault_basic`.
+5. Expand reporting beyond terminal tables into richer result analysis.
 
 ## Milestones Reached
 
@@ -162,11 +164,33 @@
   - adversarial `1/3`
   - score `0.5`
   - failure classes: `signer_validation`
+- Sweep reporting implemented:
+  - `./benchmark run-all --model <id>` runs every supported task/track pair sequentially and saves a sweep manifest under `results/sweeps/`
+  - `./benchmark compare` prints the latest sweep summary
+  - `./benchmark compare --latest <n>` prints a compact multi-sweep overview
+- Latest verified `run-all` reference sweep:
+  - model `mock/reference`
+  - pairs `3`
+  - completed `3`
+  - average score `1.0`
+  - saved report `results/sweeps/2026-04-02T10-27-50-981Z_fb5339d8.json`
+- Latest verified `run-all` insecure sweep:
+  - model `mock/insecure`
+  - pairs `3`
+  - completed `3`
+  - average score `0.4611`
+  - per-pair scores:
+    - `counter_authority/anchor`: `0.5`
+    - `counter_authority/native`: `0.5`
+    - `escrow_basic/anchor`: `0.3833`
+- Latest verified compare output:
+  - `./benchmark compare` loads the newest sweep successfully
+  - `./benchmark compare --latest 2` prints both the insecure and reference sweeps in descending time order
 
 ## Risks / Follow-Ups
 
 - Baseline commands currently piggyback on the mock adapter plus fixture solutions; that is fine for early harness validation, but later we should add an explicit self-validation suite that does not conceptually depend on a model adapter.
 - The earlier host-side `solana-program-test` route is no longer used because it hits `solana-invoke` behavior that is only implemented on the Solana target.
 - The first Claude Code benchmark run can consume noticeable quota depending on the chosen Claude model and the prompt size.
+- `run-all` is intentionally sequential because Anchor/localnet-backed tracks can contend on validator ports if run in parallel.
 - Hidden and adversarial suite manifests intentionally target the injected temp workspace layout, so committed lockfiles for those suites still require either the warm-cache workflow or a future manifest/layout refinement.
-- Anchor/localnet-backed benchmark runs should be executed sequentially when they spin up validators, since parallel runs can contend on the default RPC port and produce misleading failures.
