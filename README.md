@@ -14,7 +14,7 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `staking_pool_rewards` on `anchor`
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, and multi-program CPI claim flows
-- mock baselines plus Claude Code and Codex CLI adapters
+- mock baselines plus Claude Code, Codex CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, and compare commands
 
@@ -41,6 +41,7 @@ npm install --ignore-scripts
 ./benchmark run --model mock/starter --track anchor --task vesting_router_cpi
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run --model codex/default --track anchor --task counter_authority
+./benchmark run --model opencode/default --track anchor --task counter_authority
 ./benchmark run-all --model claude-code/sonnet
 ./benchmark compare
 ./benchmark self-check
@@ -60,6 +61,7 @@ Built-in model ids currently listed by the CLI:
 - `codex/default`
 - `codex-oss/ollama/default`
 - `codex-oss/lmstudio/default`
+- `opencode/default`
 
 The Codex adapter also accepts explicit model patterns even when they are not listed verbatim:
 
@@ -73,6 +75,19 @@ Examples:
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model codex/gpt-5 --track anchor --task vesting_router_cpi
 ./benchmark run --model codex-oss/ollama/qwen2.5-coder:32b --track anchor --task escrow_basic
+```
+
+The OpenCode adapter accepts:
+
+- `opencode/default`
+- `opencode/<provider>/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model opencode/default --track anchor --task counter_authority
+./benchmark run --model opencode/openrouter/qwen/qwen3-coder --track anchor --task escrow_basic
+./benchmark run --model opencode/ollama/qwen2.5-coder:32b --track anchor --task vesting_router_cpi
 ```
 
 ## Full Sweep
@@ -118,3 +133,4 @@ Inspect the latest saved sweep report:
 - only two native tasks are implemented so far, and `vault_basic/native` currently validates a pre-created custody token account instead of creating an ATA inside the program
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
+- OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal
