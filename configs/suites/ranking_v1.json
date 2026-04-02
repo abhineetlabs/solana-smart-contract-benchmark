@@ -1,0 +1,13 @@
+{
+  "id": "ranking_v1",
+  "title": "Ranking Suite v1",
+  "description": "Frozen hard-suite slice for model-to-model comparisons across PDA authority, SPL accounting, repair logic, CPI safety, and native Solana patterns.",
+  "targets": [
+    { "taskId": "escrow_basic", "track": "anchor" },
+    { "taskId": "multisig_treasury", "track": "anchor" },
+    { "taskId": "staking_pool_rewards", "track": "anchor" },
+    { "taskId": "vault_basic", "track": "anchor" },
+    { "taskId": "vault_basic", "track": "native" },
+    { "taskId": "vesting_router_cpi", "track": "anchor" }
+  ]
+}

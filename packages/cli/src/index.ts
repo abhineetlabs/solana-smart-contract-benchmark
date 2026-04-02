@@ -4,10 +4,13 @@ import { parseArgs } from "node:util";
 import { discoverTasks, validateAllTasks, type Difficulty } from "../../core/src/index.js";
 import { getAvailableModelIds } from "../../model-adapters/src/index.js";
 import {
+  listAvailableSuites,
+  listBenchmarkTargets,
   loadSweepReports,
   runBenchmark,
   runBenchmarkSweep,
   warmTaskCache,
+  type SweepEntry,
   type SweepReport,
 } from "../../runner/src/index.js";
 
@@ -98,6 +101,19 @@ async function handleList(args: string[]): Promise<void> {
   if (subcommand === "models") {
     for (const modelId of getAvailableModelIds()) {
       console.log(modelId);
+    }
+    return;
+  }
+
+  if (subcommand === "suites") {
+    const suites = await listAvailableSuites(process.cwd());
+    if (suites.length === 0) {
+      console.log("No suites found.");
+      return;
+    }
+
+    for (const suite of suites) {
+      console.log(`${suite.id}\t${suite.targets.length}\t${suite.title}`);
     }
     return;
   }
@@ -218,7 +234,13 @@ async function handleRunAll(args: string[]): Promise<void> {
       model: {
         type: "string",
       },
+      repeats: {
+        type: "string",
+      },
       mode: {
+        type: "string",
+      },
+      suite: {
         type: "string",
       },
       track: {
@@ -240,19 +262,44 @@ async function handleRunAll(args: string[]): Promise<void> {
     throw new Error("run-all requires --model.");
   }
 
-  const report = await runBenchmarkSweep({
-    rootDir: process.cwd(),
-    difficulty: values.difficulty as Difficulty | undefined,
-    modelId,
-    mode: values.mode as "offline" | "retrieval" | undefined,
-    track: values.track as "anchor" | "native" | "pinocchio" | undefined,
-    taskId: values.task,
-    warmCache: values["warm-cache"],
-  });
+  if (values.suite && (values.track || values.task || values.difficulty)) {
+    throw new Error("run-all cannot combine --suite with --track, --task, or --difficulty.");
+  }
 
-  printSweepReport(report);
+  const repeats = values.repeats ? Number(values.repeats) : 1;
+  if (!Number.isInteger(repeats) || repeats <= 0) {
+    throw new Error("run-all --repeats must be a positive integer.");
+  }
 
-  if (report.summary.failedTargets > 0) {
+  const reports: SweepReport[] = [];
+  for (let index = 0; index < repeats; index += 1) {
+    const report = await runBenchmarkSweep({
+      rootDir: process.cwd(),
+      difficulty: values.difficulty as Difficulty | undefined,
+      modelId,
+      mode: values.mode as "offline" | "retrieval" | undefined,
+      suiteId: values.suite,
+      track: values.track as "anchor" | "native" | "pinocchio" | undefined,
+      taskId: values.task,
+      warmCache: values["warm-cache"],
+    });
+    reports.push(report);
+
+    if (repeats === 1) {
+      printSweepReport(report);
+    } else {
+      console.log(
+        `Repeat ${index + 1}/${repeats}: ${report.sweepId} average ${formatScore(report.summary.averageScore)} build ${formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets)} failed ${report.summary.failedTargets}`,
+      );
+    }
+  }
+
+  if (repeats > 1) {
+    printSweepOverview(reports);
+    printModelAggregateSection(reports);
+  }
+
+  if (reports.some((report) => report.summary.failedTargets > 0)) {
     process.exitCode = 1;
   }
 }
@@ -261,6 +308,12 @@ async function handleSelfCheck(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
     options: {
+      difficulty: {
+        type: "string",
+      },
+      suite: {
+        type: "string",
+      },
       track: {
         type: "string",
       },
@@ -271,6 +324,98 @@ async function handleSelfCheck(args: string[]): Promise<void> {
     strict: true,
     allowPositionals: true,
   });
+
+  if (values.suite && (values.task || values.track || values.difficulty)) {
+    throw new Error("self-check cannot combine --suite with --task, --track, or --difficulty.");
+  }
+
+  if (!values.task && (values.suite || values.difficulty)) {
+    const targets = await listBenchmarkTargets({
+      rootDir: process.cwd(),
+      suiteId: values.suite,
+      track: values.track as "anchor" | "native" | "pinocchio" | undefined,
+      difficulty: values.difficulty as Difficulty | undefined,
+    });
+
+    if (targets.length === 0) {
+      throw new Error("No matching task/track pairs found for self-check.");
+    }
+
+    const failures: string[] = [];
+    const invalidTarget = targets[0];
+    if (!invalidTarget) {
+      throw new Error("No matching task/track pairs found for self-check.");
+    }
+    const invalid = await runBenchmark({
+      rootDir: process.cwd(),
+      modelId: "mock/invalid-json",
+      track: invalidTarget.track,
+      taskId: invalidTarget.taskId,
+      mode: "offline",
+    });
+
+    if (invalid.result.status !== "failed" || invalid.result.error?.stage !== "model_output_validation") {
+      failures.push("invalid-json baseline did not fail as a structured model-output validation error");
+    }
+
+    console.log(`Self-check scope: ${values.suite ? `suite ${values.suite}` : `difficulty ${values.difficulty}`}`);
+    console.log(`Invalid-json target: ${invalidTarget.taskId}/${invalidTarget.track} -> ${invalid.result.status}`);
+
+    let passedTargets = 0;
+    for (const target of targets) {
+      const reference = await runBenchmark({
+        rootDir: process.cwd(),
+        modelId: "mock/reference",
+        track: target.track,
+        taskId: target.taskId,
+        mode: "offline",
+      });
+      const insecure = await runBenchmark({
+        rootDir: process.cwd(),
+        modelId: "mock/insecure",
+        track: target.track,
+        taskId: target.taskId,
+        mode: "offline",
+      });
+
+      const targetFailures: string[] = [];
+      if (reference.result.status !== "completed" || reference.result.score.total < 0.9999) {
+        targetFailures.push("reference baseline did not achieve a clean pass");
+      }
+
+      if (
+        insecure.result.status !== "completed" ||
+        insecure.result.tests.adversarial.total === 0 ||
+        insecure.result.tests.adversarial.passed >= insecure.result.tests.adversarial.total
+      ) {
+        targetFailures.push("insecure baseline did not fail adversarial checks");
+      }
+
+      if (targetFailures.length === 0) {
+        passedTargets += 1;
+      } else {
+        for (const failure of targetFailures) {
+          failures.push(`${target.taskId}/${target.track}: ${failure}`);
+        }
+      }
+
+      console.log(
+        `${target.taskId}/${target.track}: reference ${formatScore(reference.result.score.total)}, insecure adversarial ${formatStageRatio(insecure.result.tests.adversarial.passed, insecure.result.tests.adversarial.total)}`,
+      );
+    }
+
+    console.log(`Summary: passed ${passedTargets}/${targets.length}`);
+    if (failures.length > 0) {
+      for (const failure of failures) {
+        console.error(`- ${failure}`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log("Self-check passed.");
+    return;
+  }
 
   const track = (values.track ?? "anchor") as "anchor" | "native" | "pinocchio";
   const taskId = values.task ?? "counter_authority";
@@ -376,6 +521,9 @@ async function handleCompare(args: string[]): Promise<void> {
       model: {
         type: "string",
       },
+      suite: {
+        type: "string",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -389,16 +537,19 @@ async function handleCompare(args: string[]): Promise<void> {
   const reports = await loadSweepReports({
     rootDir: process.cwd(),
     sweepIds: positionals.length > 0 ? positionals : undefined,
-    latest: positionals.length > 0 ? undefined : (latest ?? 1),
+    latest: positionals.length > 0 || values.suite ? undefined : (latest ?? 1),
     modelId: values.model,
   });
 
-  if (reports.length === 0) {
+  const filteredReports = values.suite ? reports.filter((report) => report.suiteId === values.suite) : reports;
+  const limitedReports = positionals.length > 0 || latest === undefined ? filteredReports : filteredReports.slice(0, latest);
+
+  if (limitedReports.length === 0) {
     throw new Error("No matching sweep reports found.");
   }
 
-  if (reports.length === 1) {
-    const [report] = reports;
+  if (limitedReports.length === 1) {
+    const [report] = limitedReports;
     if (!report) {
       throw new Error("No matching sweep reports found.");
     }
@@ -406,13 +557,17 @@ async function handleCompare(args: string[]): Promise<void> {
     return;
   }
 
-  printSweepOverview(reports);
+  printSweepOverview(limitedReports);
+  printModelAggregateSection(limitedReports);
 }
 
 function printSweepReport(report: SweepReport): void {
   console.log(`Sweep: ${report.sweepId}`);
   console.log(`Model: ${report.modelId}`);
   console.log(`Mode: ${report.mode}`);
+  if (report.suiteId) {
+    console.log(`Suite: ${report.suiteId}`);
+  }
   console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
   console.log(
     `Summary: pairs ${report.summary.totalTargets}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, build ${report.summary.buildPassedTargets}/${report.summary.totalTargets}, average ${formatScore(report.summary.averageScore)}`,
@@ -421,6 +576,7 @@ function printSweepReport(report: SweepReport): void {
   console.log(
     formatReportRow([
       "task",
+      "category",
       "difficulty",
       "track",
       "status",
@@ -436,6 +592,7 @@ function printSweepReport(report: SweepReport): void {
     console.log(
       formatReportRow([
         entry.taskId,
+        entry.category,
         entry.difficulty,
         entry.track,
         entry.status,
@@ -448,19 +605,23 @@ function printSweepReport(report: SweepReport): void {
       ]),
     );
   }
+  printAggregateSection("By category", aggregateEntries(report.entries, (entry) => entry.category));
+  printAggregateSection("By track", aggregateEntries(report.entries, (entry) => entry.track));
+  printFailureSection(report.entries);
   console.log(`Report: results/sweeps/${report.sweepId}.json`);
 }
 
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "pairs", "completed", "failed", "build", "average"]),
+    formatOverviewRow(["sweep", "model", "suite", "pairs", "completed", "failed", "build", "average"]),
   );
   for (const report of reports) {
     console.log(
       formatOverviewRow([
         report.sweepId,
         report.modelId,
+        report.suiteId ?? "-",
         String(report.summary.totalTargets),
         String(report.summary.completedTargets),
         String(report.summary.failedTargets),
@@ -472,12 +633,22 @@ function printSweepOverview(reports: SweepReport[]): void {
 }
 
 function formatReportRow(values: string[]): string {
-  const widths = [22, 10, 10, 10, 8, 8, 10, 10, 13, 24];
+  const widths = [22, 14, 10, 10, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 8, 10, 8, 8, 8];
+  const widths = [32, 20, 12, 8, 10, 8, 8, 8];
+  return formatRow(values, widths);
+}
+
+function formatAggregateRow(values: string[]): string {
+  const widths = [18, 8, 8, 10, 10, 13, 8];
+  return formatRow(values, widths);
+}
+
+function formatFailureRow(values: string[]): string {
+  const widths = [24, 8, 48];
   return formatRow(values, widths);
 }
 
@@ -504,17 +675,127 @@ function formatScore(value: number): string {
   return value.toFixed(4);
 }
 
+function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => string): Array<{ key: string; entries: SweepEntry[] }> {
+  const buckets = new Map<string, SweepEntry[]>();
+  for (const entry of entries) {
+    const key = keyFn(entry);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      buckets.set(key, [entry]);
+    }
+  }
+
+  return [...buckets.entries()]
+    .map(([key, bucketEntries]) => ({ key, entries: bucketEntries }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function printAggregateSection(title: string, aggregates: Array<{ key: string; entries: SweepEntry[] }>): void {
+  console.log(title + ":");
+  console.log(formatAggregateRow(["group", "pairs", "build", "public", "hidden", "adversarial", "avg"]));
+  for (const aggregate of aggregates) {
+    const summary = summarizeEntries(aggregate.entries);
+    console.log(
+      formatAggregateRow([
+        aggregate.key,
+        String(summary.pairs),
+        formatStageRatio(summary.buildPassed, summary.pairs),
+        formatStageRatio(summary.publicPassed, summary.publicTotal),
+        formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
+        formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
+        formatScore(summary.averageScore),
+      ]),
+    );
+  }
+}
+
+function printFailureSection(entries: SweepEntry[]): void {
+  const failureMap = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    for (const failureClass of entry.failureClasses) {
+      const bucket = failureMap.get(failureClass) ?? new Set<string>();
+      bucket.add(`${entry.taskId}/${entry.track}`);
+      failureMap.set(failureClass, bucket);
+    }
+  }
+
+  console.log("Failure hotspots:");
+  console.log(formatFailureRow(["class", "count", "pairs"]));
+  if (failureMap.size === 0) {
+    console.log(formatFailureRow(["none", "0", "-"]));
+    return;
+  }
+
+  for (const [failureClass, pairs] of [...failureMap.entries()].sort((left, right) => right[1].size - left[1].size || left[0].localeCompare(right[0]))) {
+    console.log(formatFailureRow([failureClass, String(pairs.size), [...pairs].sort().join(", ")]));
+  }
+}
+
+function printModelAggregateSection(reports: SweepReport[]): void {
+  const byModel = new Map<string, SweepEntry[]>();
+  for (const report of reports) {
+    const bucket = byModel.get(report.modelId) ?? [];
+    bucket.push(...report.entries);
+    byModel.set(report.modelId, bucket);
+  }
+
+  console.log("Model aggregates:");
+  console.log(formatAggregateRow(["group", "pairs", "build", "public", "hidden", "adversarial", "avg"]));
+  for (const [modelId, entries] of [...byModel.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
+    const summary = summarizeEntries(entries);
+    console.log(
+      formatAggregateRow([
+        modelId,
+        String(summary.pairs),
+        formatStageRatio(summary.buildPassed, summary.pairs),
+        formatStageRatio(summary.publicPassed, summary.publicTotal),
+        formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
+        formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
+        formatScore(summary.averageScore),
+      ]),
+    );
+  }
+}
+
+function summarizeEntries(entries: SweepEntry[]): {
+  pairs: number;
+  buildPassed: number;
+  publicPassed: number;
+  publicTotal: number;
+  hiddenPassed: number;
+  hiddenTotal: number;
+  adversarialPassed: number;
+  adversarialTotal: number;
+  averageScore: number;
+} {
+  const totalScore = entries.reduce((sum, entry) => sum + entry.score, 0);
+  return {
+    pairs: entries.length,
+    buildPassed: entries.filter((entry) => entry.buildSuccess).length,
+    publicPassed: entries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
+    publicTotal: entries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
+    hiddenPassed: entries.reduce((sum, entry) => sum + entry.tests.hidden.passed, 0),
+    hiddenTotal: entries.reduce((sum, entry) => sum + entry.tests.hidden.total, 0),
+    adversarialPassed: entries.reduce((sum, entry) => sum + entry.tests.adversarial.passed, 0),
+    adversarialTotal: entries.reduce((sum, entry) => sum + entry.tests.adversarial.total, 0),
+    averageScore: entries.length === 0 ? 0 : totalScore / entries.length,
+  };
+}
+
 function printHelp(): void {
   console.log(`Usage:
   benchmark validate
   benchmark list tasks
   benchmark list models
+  benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--warm-cache]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
-  benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>]
-  benchmark self-check [--track <track>] [--task <task>]`);
+  benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
+  benchmark self-check [--track <track>] [--task <task>] [--difficulty <level>] [--suite <suite>]`);
 }
 
 main().catch((error: unknown) => {

@@ -82,8 +82,42 @@ export function inferFailureClasses(input: {
       classes.add("token_validation");
     }
 
+    if (
+      normalized.includes("balance") ||
+      normalized.includes("accounting") ||
+      normalized.includes("reward debt") ||
+      normalized.includes("pending rewards") ||
+      normalized.includes("invariant")
+    ) {
+      classes.add("accounting_invariant");
+    }
+
     if (normalized.includes("cpi")) {
       classes.add("cpi_authorization");
+    }
+
+    if (normalized.includes("migrate") || normalized.includes("migration") || normalized.includes("legacy")) {
+      classes.add("migration_safety");
+    }
+
+    if (normalized.includes("version")) {
+      classes.add("state_versioning");
+    }
+
+    if (normalized.includes("paused") || normalized.includes("pause")) {
+      classes.add("pause_logic");
+    }
+
+    if (normalized.includes("threshold") || normalized.includes("quorum")) {
+      classes.add("threshold_enforcement");
+    }
+
+    if (normalized.includes("duplicate") || normalized.includes("replay")) {
+      classes.add("replay_protection");
+    }
+
+    if (normalized.includes("receipt") || normalized.includes("position")) {
+      classes.add("position_binding");
     }
 
     if (normalized.includes("overflow") || normalized.includes("arithmetic")) {

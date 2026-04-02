@@ -16,7 +16,8 @@
 - Current completed goal: `vault_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
 - Current completed goal: the benchmark now supports direct Codex CLI execution, including Codex-authenticated runs and OSS-through-Codex model routes.
 - Current completed goal: the benchmark now supports OpenCode CLI execution through a default route and explicit provider/model routes.
-- Current next goal: deepen failure analysis/reporting, add aggregate hard-suite self-checking, and expand the hard set with migration-style tasks.
+- Current completed goal: the benchmark now supports frozen suite definitions, repeated sweeps, richer compare breakdowns, and aggregate self-checks across multi-target slices.
+- Current next goal: expand the frozen ranking suite with migration-style tasks and more hard native coverage.
 
 ## Decisions Made
 
@@ -35,6 +36,8 @@
 - Run Claude Code benchmark invocations from a temporary clean directory to avoid accidental project-context leakage from the benchmark repo itself.
 - Run Codex benchmark invocations from a temporary clean directory and map Codex's file-entry list output back into the benchmark's file-map JSON shape.
 - Run OpenCode benchmark invocations from a temporary clean directory and forward `opencode/<provider>/<model>` suffixes directly to the OpenCode `--model provider/model` format.
+- Keep benchmark suite runs sequential; overlapping Anchor/localnet-backed sweeps can interfere with validators and contaminate results.
+- Freeze the first official comparison slice as `configs/suites/ranking_v1.json` instead of tying ranking claims to the ever-growing full task matrix.
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
@@ -59,10 +62,10 @@
 ## Immediate Work Queue
 
 1. Improve failure-class mapping from test names and failure payloads.
-2. Add a benchmark-local aggregate self-check that exercises all hard tasks in one command.
-3. Add at least one migration-style task with a partially broken starter.
-4. Add richer sweep comparison/reporting that can group by failure category and task family.
-5. Bring another hard task or repair task onto `native`.
+2. Add at least one migration-style task with a partially broken starter.
+3. Bring another hard task or repair task onto `native`.
+4. Add pairwise or model-level ranking summaries across multiple suite sweeps.
+5. Add a public-facing reporting layer once the ranking suite is stable enough to freeze.
 
 ## Milestones Reached
 
@@ -99,6 +102,20 @@
   - explicit `opencode/<provider>/<model>` ids are also accepted for OpenCode-routed providers, including local/open-weight providers if your OpenCode setup exposes them
   - benchmark runs use `opencode run --format json` with adapter-side output guards for the benchmark file-map JSON contract
   - no separate API key is required if the local OpenCode CLI session is already authenticated
+- Frozen suite support implemented:
+  - `./benchmark list suites` shows available named suite definitions
+  - `ranking_v1` is stored at `configs/suites/ranking_v1.json`
+  - `./benchmark run-all --suite ranking_v1` evaluates the frozen hard comparison slice instead of the whole evolving matrix
+- Sweep runner improvements implemented:
+  - `./benchmark run-all --repeats <n>` repeats the same target slice multiple times and prints an overview plus model aggregate summary
+  - sweep reports now persist `suiteId` and task `category`
+- Compare/reporting improvements implemented:
+  - `./benchmark compare --suite <suite>` filters to a frozen suite
+  - single-report output now includes category aggregates, track aggregates, and failure-hotspot summaries
+  - multi-report output now includes model-level aggregate summaries
+- Aggregate self-check improvements implemented:
+  - `./benchmark self-check --suite <suite>` validates reference and insecure baselines across every target in that suite, with one structured invalid-json check for the slice
+  - `./benchmark self-check --difficulty <level> --track <track>` validates multi-target slices without needing a named suite
 - Runner now supports:
   - shared benchmark-local Cargo cache via `BENCHMARK_CARGO_HOME`
   - shared benchmark-local Cargo target directory via `BENCHMARK_CARGO_TARGET_DIR`
@@ -149,6 +166,27 @@
   - hidden tests passed `3/3`
   - adversarial tests passed `3/3`
   - total score `1.0`
+- Latest verified clean frozen-suite reference sweep:
+  - command `./benchmark run-all --model mock/reference --suite ranking_v1`
+  - sweep id `2026-04-02T16-13-43-975Z_a0e225a2`
+  - pairs `6`
+  - completed `6`
+  - average score `1.0`
+- Latest verified clean frozen-suite insecure comparison report:
+  - command `./benchmark compare --latest 1 --suite ranking_v1`
+  - sweep id `2026-04-02T16-21-27-049Z_4ed04bf6`
+  - average score `0.4611`
+  - strongest hotspot classes: `position_binding`, `pause_logic`, `token_validation`
+- Latest verified repeat-sweep overview:
+  - command `./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2`
+  - both repeats completed with score `1.0`
+  - aggregate summary printed correctly across both sweeps
+- Latest verified aggregate self-check result:
+  - command `./benchmark self-check --difficulty hard --track native`
+  - invalid-json target `vault_basic/native` failed as expected
+  - reference `1.0`
+  - insecure adversarial `1/3`
+  - overall result `passed`
 - Latest verified self-check result:
   - reference score `1.0`
   - insecure adversarial `1/3`

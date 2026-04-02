@@ -10,11 +10,13 @@ import {
 } from "../../core/src/index.js";
 import { ensureDir, pathExists, readJsonFile, writeJsonFile } from "../../shared/src/index.js";
 import { runBenchmark, type AttemptResult } from "./run.js";
+import { loadBenchmarkSuite } from "./suites.js";
 import { warmTaskCache } from "./warm.js";
 
 export interface BenchmarkTarget {
   taskId: string;
   track: TrackId;
+  category: string;
   difficulty: Difficulty;
   title: string;
 }
@@ -22,6 +24,7 @@ export interface BenchmarkTarget {
 export interface SweepEntry {
   taskId: string;
   track: TrackId;
+  category: string;
   difficulty: Difficulty;
   title: string;
   runId: string;
@@ -49,6 +52,7 @@ export interface SweepReport {
   modelId: string;
   mode: InvocationMode;
   warmed: boolean;
+  suiteId?: string;
   summary: SweepSummary;
   entries: SweepEntry[];
 }
@@ -57,6 +61,7 @@ interface RunBenchmarkSweepArgs {
   rootDir: string;
   modelId: string;
   mode?: InvocationMode;
+  suiteId?: string;
   track?: TrackId;
   taskId?: string;
   difficulty?: Difficulty;
@@ -72,11 +77,36 @@ interface LoadSweepReportsArgs {
 
 export async function listBenchmarkTargets(args: {
   rootDir: string;
+  suiteId?: string;
   track?: TrackId;
   taskId?: string;
   difficulty?: Difficulty;
 }): Promise<BenchmarkTarget[]> {
   const tasks = await discoverTasks(args.rootDir);
+  const taskMap = new Map(tasks.map((task) => [task.id, task]));
+
+  if (args.suiteId) {
+    const suite = await loadBenchmarkSuite(args.rootDir, args.suiteId);
+    return suite.targets.map((target) => {
+      const task = taskMap.get(target.taskId);
+      if (!task) {
+        throw new Error(`Suite "${suite.id}" references unknown task "${target.taskId}".`);
+      }
+
+      if (!task.spec.supportedTracks.includes(target.track) || !task.tracks[target.track]) {
+        throw new Error(`Suite "${suite.id}" references unavailable pair "${target.taskId}/${target.track}".`);
+      }
+
+      return {
+        taskId: task.id,
+        track: target.track,
+        category: task.spec.category,
+        difficulty: task.spec.difficulty,
+        title: task.spec.title,
+      };
+    });
+  }
+
   const targets: BenchmarkTarget[] = [];
 
   for (const task of tasks) {
@@ -100,6 +130,7 @@ export async function listBenchmarkTargets(args: {
       targets.push({
         taskId: task.id,
         track: supportedTrack,
+        category: task.spec.category,
         difficulty: task.spec.difficulty,
         title: task.spec.title,
       });
@@ -120,6 +151,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
   const mode = args.mode ?? "offline";
   const targets = await listBenchmarkTargets({
     rootDir: args.rootDir,
+    suiteId: args.suiteId,
     track: args.track,
     taskId: args.taskId,
     difficulty: args.difficulty,
@@ -158,6 +190,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     modelId: args.modelId,
     mode,
     warmed: args.warmCache ?? false,
+    suiteId: args.suiteId,
     summary: computeSweepSummary(entries),
     entries,
   };
@@ -206,6 +239,7 @@ function toSweepEntry(
   return {
     taskId: target.taskId,
     track: target.track,
+    category: target.category,
     difficulty: target.difficulty,
     title: target.title,
     runId: result.runId,

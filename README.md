@@ -14,9 +14,10 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `staking_pool_rewards` on `anchor`
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, and multi-program CPI claim flows
+- a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
 - mock baselines plus Claude Code, Codex CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
-- local self-check, warm-cache, run-all, and compare commands
+- local self-check, warm-cache, run-all, compare, and suite commands
 
 ## Quickstart
 
@@ -25,6 +26,7 @@ npm install --ignore-scripts
 ./benchmark validate
 ./benchmark list tasks
 ./benchmark list models
+./benchmark list suites
 ./benchmark warm-cache --track anchor --task counter_authority
 ./benchmark run --model mock/reference --track anchor --task counter_authority
 ./benchmark warm-cache --track anchor --task escrow_basic
@@ -42,9 +44,11 @@ npm install --ignore-scripts
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model opencode/default --track anchor --task counter_authority
-./benchmark run-all --model claude-code/sonnet
+./benchmark run-all --model claude-code/sonnet --suite ranking_v1
+./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
 ./benchmark compare
-./benchmark self-check
+./benchmark compare --suite ranking_v1
+./benchmark self-check --suite ranking_v1
 ```
 
 ## Model Adapters
@@ -99,12 +103,22 @@ Run the whole currently supported benchmark matrix for a model:
 ./benchmark run-all --model claude-code/sonnet --difficulty hard
 ```
 
+Run the frozen ranking suite instead of the whole evolving task matrix:
+
+```bash
+./benchmark list suites
+./benchmark run-all --model claude-code/sonnet --suite ranking_v1
+./benchmark run-all --model codex/default --suite ranking_v1
+./benchmark compare --suite ranking_v1
+```
+
 Optional filters:
 
 ```bash
 ./benchmark run-all --model claude-code/sonnet --difficulty hard
 ./benchmark run-all --model claude-code/sonnet --track anchor
 ./benchmark run-all --model claude-code/sonnet --task escrow_basic
+./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
 ./benchmark run-all --model claude-code/sonnet --warm-cache
 ```
 
@@ -114,6 +128,14 @@ Inspect the latest saved sweep report:
 ./benchmark compare
 ./benchmark compare --latest 2
 ./benchmark compare --model claude-code/sonnet
+./benchmark compare --suite ranking_v1
+```
+
+Run benchmark integrity checks over a full scope instead of one task:
+
+```bash
+./benchmark self-check --suite ranking_v1
+./benchmark self-check --difficulty hard --track native
 ```
 
 ## What It Measures
@@ -125,6 +147,8 @@ Inspect the latest saved sweep report:
 - repair ability on partially broken smart-contract starters
 - CPI and multi-program authority-flow reasoning
 - reproducible offline evaluation
+- suite-level comparison with category, track, and failure-hotspot breakdowns
+- repeated sweeps for quick stability checks on the same slice
 
 ## Current Limitations
 
@@ -134,3 +158,4 @@ Inspect the latest saved sweep report:
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
 - OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal
+- ranking-suite runs should stay sequential; overlapping Anchor/localnet-backed sweeps can interfere with each other
