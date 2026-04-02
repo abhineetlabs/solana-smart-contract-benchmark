@@ -17,7 +17,8 @@
 - Current completed goal: the benchmark now supports direct Codex CLI execution, including Codex-authenticated runs and OSS-through-Codex model routes.
 - Current completed goal: the benchmark now supports OpenCode CLI execution through a default route and explicit provider/model routes.
 - Current completed goal: the benchmark now supports frozen suite definitions, repeated sweeps, richer compare breakdowns, and aggregate self-checks across multi-target slices.
-- Current next goal: expand the frozen ranking suite with migration-style tasks and more hard native coverage.
+- Current completed goal: the benchmark now includes a migration-style hard task, `vault_receipt_migration`, and it is promoted into the frozen `ranking_v1` suite.
+- Current next goal: expand hard native coverage and add more migration or exploit-fix tasks after the first ranking-suite migration task.
 
 ## Decisions Made
 
@@ -62,10 +63,10 @@
 ## Immediate Work Queue
 
 1. Improve failure-class mapping from test names and failure payloads.
-2. Add at least one migration-style task with a partially broken starter.
-3. Bring another hard task or repair task onto `native`.
-4. Add pairwise or model-level ranking summaries across multiple suite sweeps.
-5. Add a public-facing reporting layer once the ranking suite is stable enough to freeze.
+2. Bring another hard task or repair task onto `native`.
+3. Add pairwise or model-level ranking summaries across multiple suite sweeps.
+4. Add a public-facing reporting layer once the ranking suite is stable enough to freeze.
+5. Add more migration or exploit-fix tasks once the next native-hard slice lands.
 
 ## Milestones Reached
 
@@ -106,6 +107,10 @@
   - `./benchmark list suites` shows available named suite definitions
   - `ranking_v1` is stored at `configs/suites/ranking_v1.json`
   - `./benchmark run-all --suite ranking_v1` evaluates the frozen hard comparison slice instead of the whole evolving matrix
+- Migration-style hard task implemented:
+  - `vault_receipt_migration` on `anchor`
+  - focus: legacy-to-v2 vault and receipt upgrades, ownership preservation, withdrawal-history preservation, and post-migration destination validation
+  - starter and insecure variants intentionally preserve public-path behavior while failing hidden/adversarial migration invariants
 - Sweep runner improvements implemented:
   - `./benchmark run-all --repeats <n>` repeats the same target slice multiple times and prints an overview plus model aggregate summary
   - sweep reports now persist `suiteId` and task `category`
@@ -168,10 +173,31 @@
   - total score `1.0`
 - Latest verified clean frozen-suite reference sweep:
   - command `./benchmark run-all --model mock/reference --suite ranking_v1`
-  - sweep id `2026-04-02T16-13-43-975Z_a0e225a2`
-  - pairs `6`
-  - completed `6`
+  - sweep id `2026-04-02T17-52-51-094Z_d00ddc70`
+  - pairs `7`
+  - completed `7`
   - average score `1.0`
+- Latest verified `vault_receipt_migration` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `vault_receipt_migration` insecure result:
+  - public `3/3`
+  - hidden `0/3`
+  - adversarial `0/3`
+  - score `0.25`
+  - failure classes: `migration_safety`, `ownership_validation`, `position_binding`
+- Latest verified `vault_receipt_migration` self-check result:
+  - reference score `1.0`
+  - insecure adversarial `0/3`
+  - invalid-json status `failed`
+  - overall result `passed`
+- Latest verified frozen-suite self-check result:
+  - command `./benchmark self-check --suite ranking_v1`
+  - invalid-json target `escrow_basic/anchor` failed as expected
+  - summary `passed 7/7`
+  - overall result `passed`
 - Latest verified clean frozen-suite insecure comparison report:
   - command `./benchmark compare --latest 1 --suite ranking_v1`
   - sweep id `2026-04-02T16-21-27-049Z_4ed04bf6`

@@ -8,6 +8,7 @@
     { "taskId": "staking_pool_rewards", "track": "anchor" },
     { "taskId": "vault_basic", "track": "anchor" },
     { "taskId": "vault_basic", "track": "native" },
+    { "taskId": "vault_receipt_migration", "track": "anchor" },
     { "taskId": "vesting_router_cpi", "track": "anchor" }
   ]
 }

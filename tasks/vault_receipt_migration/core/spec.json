@@ -1,0 +1,113 @@
+{
+  "id": "vault_receipt_migration",
+  "title": "Migrate Legacy SPL Vault Receipts To V2",
+  "category": "migration",
+  "difficulty": "hard",
+  "version": "1.0.0",
+  "supportedTracks": ["anchor"],
+  "supportedModes": ["migrate"],
+  "summary": "Repair a vault upgrade path that must migrate legacy vault configs and per-user receipt accounts to a stricter V2 layout without losing balances or weakening authorization.",
+  "businessLogic": [
+    "A vault holds one SPL mint under a PDA authority and tracks per-user balances through receipt PDAs.",
+    "Legacy V1 vaults and receipts already exist in production and must be migrated in place to V2 instead of rebuilt from scratch.",
+    "V2 adds stricter pause semantics, explicit version checks, and receipt withdrawal-history accounting that must survive migration intact."
+  ],
+  "instructions": [
+    {
+      "name": "initialize_legacy_vault",
+      "description": "Create a legacy V1 vault config and PDA-controlled custody token account so tests can simulate pre-upgrade state."
+    },
+    {
+      "name": "initialize_vault",
+      "description": "Create a fresh V2 vault directly for new deployments."
+    },
+    {
+      "name": "migrate_vault",
+      "description": "Upgrade a V1 vault config to V2 without changing its seed, admin, mint, PDA authority, or accounting totals."
+    },
+    {
+      "name": "deposit",
+      "description": "Deposit user funds into the vault and create or update a receipt PDA using the correct version for the vault state."
+    },
+    {
+      "name": "migrate_receipt",
+      "description": "Upgrade a legacy user receipt to V2 in place while preserving owner binding, balance, and withdrawal history."
+    },
+    {
+      "name": "withdraw",
+      "description": "Allow withdrawals only from migrated V2 receipts into a token account actually owned by the withdrawing user."
+    },
+    {
+      "name": "set_paused",
+      "description": "Allow only the vault admin to pause or resume V2 vault movement."
+    }
+  ],
+  "accounts": [
+    {
+      "name": "admin",
+      "role": "legacy owner and upgrade authority",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "user",
+      "role": "receipt owner and migrator",
+      "constraints": ["signer"]
+    },
+    {
+      "name": "vault_config",
+      "role": "versioned state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "receipt",
+      "role": "versioned user balance state",
+      "constraints": ["pda", "writable"]
+    },
+    {
+      "name": "vault",
+      "role": "custody",
+      "constraints": ["associated-token", "writable"]
+    }
+  ],
+  "invariants": [
+    "Only the configured admin may migrate a legacy vault or pause a V2 vault.",
+    "Only the stored receipt owner may migrate or withdraw from that receipt.",
+    "Migrating a vault or receipt must preserve existing balances and withdrawal totals instead of resetting them.",
+    "A V2 vault must reject withdrawals from receipts that were never migrated to V2.",
+    "Withdrawals must go only to a token account owned by the withdrawing user and using the configured mint."
+  ],
+  "failureConditions": [
+    "Resetting `total_withdrawn` or per-receipt withdrawal history during repeat migration calls.",
+    "Allowing an attacker to claim ownership of another user's legacy receipt during migration.",
+    "Allowing a non-admin signer to migrate the vault.",
+    "Allowing withdrawals from a legacy receipt after the vault has already been upgraded to V2.",
+    "Allowing migrated funds to be redirected into an attacker-owned token account."
+  ],
+  "editableFiles": [
+    "programs/vault_receipt_migration/src/lib.rs"
+  ],
+  "promptAssets": {
+    "includePublicTests": true,
+    "includeStarterTree": true,
+    "includeCommands": true,
+    "includeEditableFileContents": true
+  },
+  "evaluation": {
+    "publicTests": true,
+    "hiddenTests": true,
+    "adversarialTests": true,
+    "collectComputeUnits": false
+  },
+  "scoring": {
+    "build": 0.1,
+    "public": 0.15,
+    "hidden": 0.35,
+    "adversarial": 0.4,
+    "efficiency": 0.0
+  },
+  "trackConfigs": {
+    "anchor": {
+      "entryFiles": ["programs/vault_receipt_migration/src/lib.rs"]
+    }
+  }
+}

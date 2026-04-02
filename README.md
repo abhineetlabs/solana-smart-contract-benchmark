@@ -6,14 +6,15 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
 
-- eight working benchmark pairs:
+- nine working benchmark pairs:
   - `counter_authority` on `anchor` and `native`
   - `escrow_basic` on `anchor`
   - `vault_basic` on `anchor` and `native`
   - `multisig_treasury` on `anchor`
   - `staking_pool_rewards` on `anchor`
+  - `vault_receipt_migration` on `anchor`
   - `vesting_router_cpi` on `anchor`
-- a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, and multi-program CPI claim flows
+- a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, migration-state safety, and multi-program CPI claim flows
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
 - mock baselines plus Claude Code, Codex CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
@@ -34,12 +35,15 @@ npm install --ignore-scripts
 ./benchmark warm-cache --track native --task vault_basic
 ./benchmark warm-cache --track anchor --task multisig_treasury
 ./benchmark warm-cache --track anchor --task staking_pool_rewards
+./benchmark warm-cache --track anchor --task vault_receipt_migration
 ./benchmark warm-cache --track anchor --task vesting_router_cpi
 ./benchmark baseline reference --track native --task counter_authority
 ./benchmark baseline reference --track native --task vault_basic
 ./benchmark baseline reference --track anchor --task staking_pool_rewards
+./benchmark baseline reference --track anchor --task vault_receipt_migration
 ./benchmark baseline reference --track anchor --task vesting_router_cpi
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards
+./benchmark run --model mock/starter --track anchor --task vault_receipt_migration
 ./benchmark run --model mock/starter --track anchor --task vesting_router_cpi
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run --model codex/default --track anchor --task counter_authority
@@ -145,6 +149,7 @@ Run benchmark integrity checks over a full scope instead of one task:
 - framework-specific implementation fluency
 - multi-instruction state-machine reasoning
 - repair ability on partially broken smart-contract starters
+- migration safety and state-compatibility reasoning
 - CPI and multi-program authority-flow reasoning
 - reproducible offline evaluation
 - suite-level comparison with category, track, and failure-hotspot breakdowns

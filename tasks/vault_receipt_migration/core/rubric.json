@@ -1,0 +1,6 @@
+{
+  "notes": [
+    "Public checks focus on honest legacy-to-V2 migration, direct V2 receipt creation, and pause behavior after migration.",
+    "Hidden and adversarial checks focus on migration idempotence, version-gated withdrawals, receipt ownership preservation, admin-only vault migration, and payout redirection."
+  ]
+}
