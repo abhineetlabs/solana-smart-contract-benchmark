@@ -6,9 +6,9 @@ Local benchmark harness for evaluating LLM performance on Solana smart contract 
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
 
-- nine working benchmark pairs:
+- ten working benchmark pairs:
   - `counter_authority` on `anchor` and `native`
-  - `escrow_basic` on `anchor`
+  - `escrow_basic` on `anchor` and `native`
   - `vault_basic` on `anchor` and `native`
   - `multisig_treasury` on `anchor`
   - `staking_pool_rewards` on `anchor`
@@ -31,6 +31,7 @@ npm install --ignore-scripts
 ./benchmark warm-cache --track anchor --task counter_authority
 ./benchmark run --model mock/reference --track anchor --task counter_authority
 ./benchmark warm-cache --track anchor --task escrow_basic
+./benchmark warm-cache --track native --task escrow_basic
 ./benchmark warm-cache --track anchor --task vault_basic
 ./benchmark warm-cache --track native --task vault_basic
 ./benchmark warm-cache --track anchor --task multisig_treasury
@@ -38,6 +39,7 @@ npm install --ignore-scripts
 ./benchmark warm-cache --track anchor --task vault_receipt_migration
 ./benchmark warm-cache --track anchor --task vesting_router_cpi
 ./benchmark baseline reference --track native --task counter_authority
+./benchmark baseline reference --track native --task escrow_basic
 ./benchmark baseline reference --track native --task vault_basic
 ./benchmark baseline reference --track anchor --task staking_pool_rewards
 ./benchmark baseline reference --track anchor --task vault_receipt_migration
@@ -159,7 +161,7 @@ Run benchmark integrity checks over a full scope instead of one task:
 
 - retrieval mode is not implemented yet
 - there is not yet a richer leaderboard-style or HTML reporting layer
-- only two native tasks are implemented so far, and `vault_basic/native` currently validates a pre-created custody token account instead of creating an ATA inside the program
+- only three native tasks are implemented so far, and both `escrow_basic/native` and `vault_basic/native` currently validate pre-created custody token accounts instead of creating them inside the program
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
 - OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal

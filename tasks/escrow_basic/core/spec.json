@@ -4,7 +4,7 @@
   "category": "escrow",
   "difficulty": "hard",
   "version": "1.0.0",
-  "supportedTracks": ["anchor"],
+  "supportedTracks": ["anchor", "native"],
   "supportedModes": ["generate"],
   "summary": "Implement a two-party SPL token escrow with PDA-backed custody, exchange, and cancel flows.",
   "businessLogic": [
@@ -61,7 +61,8 @@
     "Allowing payout redirection to attacker-controlled token accounts."
   ],
   "editableFiles": [
-    "programs/escrow_basic/src/lib.rs"
+    "programs/escrow_basic/src/lib.rs",
+    "src/lib.rs"
   ],
   "promptAssets": {
     "includePublicTests": true,
@@ -85,6 +86,9 @@
   "trackConfigs": {
     "anchor": {
       "entryFiles": ["programs/escrow_basic/src/lib.rs"]
+    },
+    "native": {
+      "entryFiles": ["src/lib.rs"]
     }
   }
 }

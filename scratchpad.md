@@ -14,6 +14,7 @@
 - Current completed goal: the CLI now supports `run-all` benchmark sweeps and saved sweep comparison reports.
 - Current completed goal: the benchmark now includes a multi-program CPI repair task, `vesting_router_cpi`, with hidden incremental-claim math and helper-vault binding checks.
 - Current completed goal: `vault_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
+- Current completed goal: `escrow_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
 - Current completed goal: the benchmark now supports direct Codex CLI execution, including Codex-authenticated runs and OSS-through-Codex model routes.
 - Current completed goal: the benchmark now supports OpenCode CLI execution through a default route and explicit provider/model routes.
 - Current completed goal: the benchmark now supports frozen suite definitions, repeated sweeps, richer compare breakdowns, and aggregate self-checks across multi-target slices.
@@ -42,6 +43,7 @@
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
+- Use a host-side `solana-program-test` native track for `escrow_basic`, with the harness pre-creating the custody token account while the program remains responsible for escrow state, maker/taker validation, settlement, cancellation, and closure semantics.
 - Use a host-side `solana-program-test` native track for `vault_basic`, with the harness pre-creating the custody token account while the program remains responsible for PDA state creation, authority checks, pause control, and accounting invariants.
 
 ## Environment Notes
@@ -203,15 +205,20 @@
   - sweep id `2026-04-02T16-21-27-049Z_4ed04bf6`
   - average score `0.4611`
   - strongest hotspot classes: `position_binding`, `pause_logic`, `token_validation`
+- Latest verified native hard reference sweep:
+  - command `./benchmark run-all --model mock/reference --track native --difficulty hard`
+  - sweep id `2026-04-03T10-41-59-241Z_3ba84656`
+  - pairs `2`
+  - completed `2`
+  - average score `1.0`
 - Latest verified repeat-sweep overview:
   - command `./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2`
   - both repeats completed with score `1.0`
   - aggregate summary printed correctly across both sweeps
 - Latest verified aggregate self-check result:
   - command `./benchmark self-check --difficulty hard --track native`
-  - invalid-json target `vault_basic/native` failed as expected
-  - reference `1.0`
-  - insecure adversarial `1/3`
+  - invalid-json target `escrow_basic/native` failed as expected
+  - summary `passed 2/2`
   - overall result `passed`
 - Latest verified self-check result:
   - reference score `1.0`
@@ -223,7 +230,7 @@
   - public suite warmup passed
   - hidden suite warmup passed
   - adversarial suite warmup passed
-- Second task added: `escrow_basic` on the `anchor` track.
+- Second task added: `escrow_basic` on the `anchor` and `native` tracks.
 - `escrow_basic` covers:
   - PDA-derived escrow state
   - PDA-controlled SPL token vault custody
@@ -242,6 +249,22 @@
   - hidden `3/3`
   - adversarial `3/3`
 - Latest verified `escrow_basic` insecure result:
+  - public `3/3`
+  - hidden `0/3`
+  - adversarial `1/3`
+  - score `0.3833`
+  - failure classes: `token_validation`
+- `escrow_basic/native` verified commands:
+  - `./benchmark warm-cache --track native --task escrow_basic`
+  - `./benchmark baseline reference --track native --task escrow_basic`
+  - `./benchmark baseline insecure --track native --task escrow_basic`
+  - `./benchmark self-check --track native --task escrow_basic`
+- Latest verified `escrow_basic/native` reference result:
+  - score `1.0`
+  - public `3/3`
+  - hidden `3/3`
+  - adversarial `3/3`
+- Latest verified `escrow_basic/native` insecure result:
   - public `3/3`
   - hidden `0/3`
   - adversarial `1/3`
