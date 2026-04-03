@@ -1,0 +1,44 @@
+{
+  "id": "personal_ranking_v1",
+  "title": "Personal Ranking Suite v1",
+  "description": "Workflow-weighted suite for choosing the best day-to-day smart-contract model across generation, repair, migration, Anchor, and low-level native Solana work.",
+  "tags": ["personal", "ranking", "workflow"],
+  "weightRules": {
+    "base": 1,
+    "difficulty": {
+      "easy": 0.75,
+      "medium": 1.0,
+      "hard": 1.35
+    },
+    "interactionMode": {
+      "generate": 1.0,
+      "repair": 1.35,
+      "migrate": 1.5
+    },
+    "track": {
+      "anchor": 1.0,
+      "native": 1.2
+    },
+    "category": {
+      "state-management": 0.8,
+      "escrow": 1.05,
+      "vault": 1.15,
+      "multisig": 1.2,
+      "staking": 1.35,
+      "migration": 1.5,
+      "vesting": 1.4
+    }
+  },
+  "targets": [
+    { "taskId": "counter_authority", "track": "anchor" },
+    { "taskId": "counter_authority", "track": "native" },
+    { "taskId": "escrow_basic", "track": "anchor" },
+    { "taskId": "escrow_basic", "track": "native" },
+    { "taskId": "vault_basic", "track": "anchor" },
+    { "taskId": "vault_basic", "track": "native" },
+    { "taskId": "multisig_treasury", "track": "anchor" },
+    { "taskId": "staking_pool_rewards", "track": "anchor" },
+    { "taskId": "vault_receipt_migration", "track": "anchor" },
+    { "taskId": "vesting_router_cpi", "track": "anchor" }
+  ]
+}

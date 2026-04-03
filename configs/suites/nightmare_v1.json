@@ -1,0 +1,12 @@
+{
+  "id": "nightmare_v1",
+  "title": "Nightmare Suite v1",
+  "description": "High-risk repair and migration tasks for stress-testing the models you might trust on ugly reward-accounting, CPI, and upgrade-path work.",
+  "tags": ["nightmare", "personal", "workflow"],
+  "targets": [
+    { "taskId": "staking_pool_rewards", "track": "anchor", "weight": 4 },
+    { "taskId": "vesting_router_cpi", "track": "anchor", "weight": 4 },
+    { "taskId": "vault_receipt_migration", "track": "anchor", "weight": 4.5 },
+    { "taskId": "vault_basic", "track": "native", "weight": 3.5 }
+  ]
+}

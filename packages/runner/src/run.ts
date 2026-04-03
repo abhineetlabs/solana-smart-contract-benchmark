@@ -18,6 +18,7 @@ import {
   ensureDir,
   pathExists,
   readJsonFile,
+  readTextFile,
   runCommand,
   toPosixPath,
   writeJsonFile,
@@ -34,6 +35,7 @@ interface RunBenchmarkArgs {
   interactionMode?: InteractionMode;
   temperature?: number;
   maxOutputTokens?: number;
+  maxAttempts?: number;
   keepWorkspace?: boolean;
 }
 
@@ -41,10 +43,17 @@ interface ParsedModelOutput {
   files: Record<string, string>;
 }
 
+interface AttemptStageResult {
+  summary: StageSummary;
+  commandLogPath?: string;
+}
+
 export interface AttemptResult {
   status: "completed" | "failed";
   runId: string;
   attemptId: string;
+  attemptNumber: number;
+  maxAttempts: number;
   taskId: string;
   taskVersion: string;
   track: string;
@@ -77,16 +86,19 @@ export interface AttemptResult {
     public: {
       passed: number;
       total: number;
+      failures?: string[];
       commandLogsPath?: string;
     };
     hidden: {
       passed: number;
       total: number;
+      failures?: string[];
       commandLogsPath?: string;
     };
     adversarial: {
       passed: number;
       total: number;
+      failures?: string[];
       commandLogsPath?: string;
     };
   };
@@ -115,25 +127,33 @@ export interface AttemptResult {
   };
 }
 
-export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: AttemptResult; attemptDir: string }> {
+export interface BenchmarkRunSummary {
+  runId: string;
+  attemptIds: string[];
+  maxAttempts: number;
+  attemptCount: number;
+  reachedGreen: boolean;
+  firstPassGreen: boolean;
+  greenAttemptNumber?: number;
+  timeToGreenMs?: number;
+  totalDurationMs: number;
+}
+
+export interface BenchmarkExecution {
+  result: AttemptResult;
+  attemptDir: string;
+  run: BenchmarkRunSummary;
+}
+
+export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExecution> {
   const mode = args.mode ?? "offline";
   const temperature = args.temperature ?? 0;
+  const maxAttempts = args.maxAttempts ?? 1;
   const task = await loadRequiredTask(args.rootDir, args.taskId);
   const interactionMode = args.interactionMode ?? task.spec.supportedModes[0] ?? "generate";
   const track = loadRequiredTrack(task, args.track);
-
   const runId = createRunId();
-  const attemptId = `${task.id}_${track.track}_${mode}_attempt1`;
   const runDir = path.join(args.rootDir, "results", runId);
-  const attemptDir = path.join(runDir, "attempts", attemptId);
-  const artifactsDir = path.join(attemptDir, "artifacts");
-  const logsDir = path.join(attemptDir, "logs");
-  await ensureDir(artifactsDir);
-  await ensureDir(logsDir);
-
-  const workspaceDir = await mkdtemp(path.join(tmpdir(), "solana-llm-benchmark-"));
-  const workspaceRoot = path.join(workspaceDir, "workspace");
-  await copyDirectory(track.starterDir, workspaceRoot);
   const sharedCargoHome = path.join(args.rootDir, ".tooling", "cargo-home");
   const sharedCargoTargetDir = path.join(args.rootDir, ".tooling", "cargo-target", task.id, track.track);
   await ensureDir(sharedCargoHome);
@@ -142,34 +162,141 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
     BENCHMARK_CARGO_HOME: sharedCargoHome,
     BENCHMARK_CARGO_TARGET_DIR: sharedCargoTargetDir,
   };
-
-  const prompt = await renderPrompt({ task, track });
-  await writeTextFile(path.join(attemptDir, "prompt.txt"), prompt);
-  await writeJsonFile(path.join(attemptDir, "resolved-task-spec.json"), task.spec);
-  await writeJsonFile(path.join(attemptDir, "track-config.json"), track.config);
-
-  const workspaceExecutionRoot = path.join(workspaceRoot, track.config.workspaceRoot);
   const toolchain = await readJsonFile<Record<string, string | null>>(
     path.join(args.rootDir, "configs", "toolchains.json"),
   );
+  const basePrompt = await renderPrompt({ task, track });
+  const runStartedAt = Date.now();
+  const attemptIds: string[] = [];
+  let previousAttempt: { result: AttemptResult; attemptDir: string } | undefined;
+  let finalExecution: { result: AttemptResult; attemptDir: string } | undefined;
+  let greenAttemptNumber: number | undefined;
+  let timeToGreenMs: number | undefined;
 
+  for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
+    const attemptNumber = attemptIndex + 1;
+    const prompt = await buildAttemptPrompt({
+      basePrompt,
+      previousResult: previousAttempt?.result,
+      previousAttemptDir: previousAttempt?.attemptDir,
+    });
+
+    const execution = await runSingleAttempt({
+      rootDir: args.rootDir,
+      runId,
+      runDir,
+      task,
+      track,
+      modelId: args.modelId,
+      mode,
+      interactionMode,
+      prompt,
+      temperature,
+      maxOutputTokens: args.maxOutputTokens,
+      attemptNumber,
+      maxAttempts,
+      commandEnv,
+      toolchain,
+      keepWorkspace: args.keepWorkspace,
+    });
+    attemptIds.push(execution.result.attemptId);
+    previousAttempt = execution;
+    finalExecution = execution;
+
+    if (isGreenAttempt(execution.result)) {
+      greenAttemptNumber = attemptNumber;
+      timeToGreenMs = Date.now() - runStartedAt;
+      break;
+    }
+  }
+
+  const result = finalExecution?.result;
+  const attemptDir = finalExecution?.attemptDir;
+  if (!result || !attemptDir) {
+    throw new Error("Benchmark run completed without producing an attempt result.");
+  }
+
+  const run: BenchmarkRunSummary = {
+    runId,
+    attemptIds,
+    maxAttempts,
+    attemptCount: attemptIds.length,
+    reachedGreen: greenAttemptNumber !== undefined,
+    firstPassGreen: greenAttemptNumber === 1,
+    greenAttemptNumber,
+    timeToGreenMs,
+    totalDurationMs: Date.now() - runStartedAt,
+  };
+
+  await persistRunManifest({
+    runDir,
+    runId,
+    taskId: task.id,
+    track: track.track,
+    modelId: args.modelId,
+    mode,
+    interactionMode,
+    run,
+    finalResult: result,
+  });
+
+  return {
+    result,
+    attemptDir,
+    run,
+  };
+}
+
+async function runSingleAttempt(args: {
+  rootDir: string;
+  runId: string;
+  runDir: string;
+  task: TaskDescriptor;
+  track: TaskTrackDescriptor;
+  modelId: string;
+  mode: InvocationMode;
+  interactionMode: InteractionMode;
+  prompt: string;
+  temperature: number;
+  maxOutputTokens?: number;
+  attemptNumber: number;
+  maxAttempts: number;
+  commandEnv: Record<string, string>;
+  toolchain: Record<string, string | null>;
+  keepWorkspace?: boolean;
+}): Promise<{ result: AttemptResult; attemptDir: string }> {
+  const attemptId = `${args.task.id}_${args.track.track}_${args.mode}_attempt${args.attemptNumber}`;
+  const attemptDir = path.join(args.runDir, "attempts", attemptId);
+  const artifactsDir = path.join(attemptDir, "artifacts");
+  const logsDir = path.join(attemptDir, "logs");
+  await ensureDir(artifactsDir);
+  await ensureDir(logsDir);
+
+  const workspaceDir = await mkdtemp(path.join(tmpdir(), "solana-llm-benchmark-"));
+  const workspaceRoot = path.join(workspaceDir, "workspace");
+  await copyDirectory(args.track.starterDir, workspaceRoot);
+  await writeTextFile(path.join(attemptDir, "prompt.txt"), args.prompt);
+  await writeJsonFile(path.join(attemptDir, "resolved-task-spec.json"), args.task.spec);
+  await writeJsonFile(path.join(attemptDir, "track-config.json"), args.track.config);
+
+  const workspaceExecutionRoot = path.join(workspaceRoot, args.track.config.workspaceRoot);
   const adapter = getAdapterForModel(args.modelId);
-  const fixtureFilesJson = JSON.stringify(buildFixtureFileMap(track));
+  const fixtureFilesJson = JSON.stringify(buildFixtureFileMap(args.track));
   let currentStage = "model_invoke";
   let modelResponse: ModelResponse | undefined;
 
   try {
     modelResponse = await adapter.invoke({
       modelId: args.modelId,
-      prompt,
-      temperature,
+      prompt: args.prompt,
+      temperature: args.temperature,
       maxOutputTokens: args.maxOutputTokens,
       responseFormat: "file-map-json",
-      mode,
-      attemptIndex: 0,
+      mode: args.mode,
+      attemptIndex: args.attemptNumber - 1,
       metadata: {
-        taskId: task.id,
-        track: track.track,
+        taskId: args.task.id,
+        track: args.track.track,
         fixtureFilesJson,
       },
     });
@@ -178,49 +305,49 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
     await persistModelArtifacts(attemptDir, modelResponse);
 
     currentStage = "model_output_validation";
-    const parsedOutput = parseAndValidateModelOutput(modelResponse, track);
+    const parsedOutput = parseAndValidateModelOutput(modelResponse, args.track);
     await writeJsonFile(path.join(attemptDir, "file-map.json"), parsedOutput);
 
     currentStage = "workspace_apply";
     await applyModelOutput(workspaceRoot, parsedOutput);
 
     currentStage = "build";
-    const buildResult = await runCommand(track.config.buildCommand, workspaceExecutionRoot, commandEnv);
+    const buildResult = await runCommand(args.track.config.buildCommand, workspaceExecutionRoot, args.commandEnv);
     await writeJsonFile(path.join(logsDir, "build.json"), buildResult);
 
     currentStage = "public_tests";
     const publicStage = await executeStage({
-      enabled: buildResult.success && Boolean(track.config.publicTestCommand),
-      command: track.config.publicTestCommand,
+      enabled: buildResult.success && Boolean(args.track.config.publicTestCommand),
+      command: args.track.config.publicTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "public.json"),
-      env: commandEnv,
+      env: args.commandEnv,
     });
 
     currentStage = "hidden_tests";
     const hiddenStage = await executeInjectedStage({
-      enabled: buildResult.success && task.spec.evaluation.hiddenTests,
-      sourceDir: track.hiddenTestsDir,
-      targetDir: path.join(workspaceRoot, track.config.hiddenTestInjectionTarget ?? "tests"),
-      command: track.config.hiddenTestCommand,
+      enabled: buildResult.success && args.task.spec.evaluation.hiddenTests,
+      sourceDir: args.track.hiddenTestsDir,
+      targetDir: path.join(workspaceRoot, args.track.config.hiddenTestInjectionTarget ?? "tests"),
+      command: args.track.config.hiddenTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "hidden.json"),
-      env: commandEnv,
+      env: args.commandEnv,
     });
 
     currentStage = "adversarial_tests";
     const adversarialStage = await executeInjectedStage({
-      enabled: buildResult.success && task.spec.evaluation.adversarialTests,
-      sourceDir: track.adversarialTestsDir,
-      targetDir: path.join(workspaceRoot, track.config.adversarialTestInjectionTarget ?? "tests"),
-      command: track.config.adversarialTestCommand,
+      enabled: buildResult.success && args.task.spec.evaluation.adversarialTests,
+      sourceDir: args.track.adversarialTestsDir,
+      targetDir: path.join(workspaceRoot, args.track.config.adversarialTestInjectionTarget ?? "tests"),
+      command: args.track.config.adversarialTestCommand,
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "adversarial.json"),
-      env: commandEnv,
+      env: args.commandEnv,
     });
 
     currentStage = "artifact_snapshot";
-    const scoreBreakdown = computeAttemptScore(task.spec.scoring, buildResult.success, {
+    const scoreBreakdown = computeAttemptScore(args.task.spec.scoring, buildResult.success, {
       public: publicStage.summary,
       hidden: hiddenStage.summary,
       adversarial: adversarialStage.summary,
@@ -230,17 +357,19 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
 
     const result: AttemptResult = {
       status: "completed",
-      runId,
+      runId: args.runId,
       attemptId,
-      taskId: task.id,
-      taskVersion: task.spec.version,
-      track: track.track,
-      mode,
-      interactionMode,
+      attemptNumber: args.attemptNumber,
+      maxAttempts: args.maxAttempts,
+      taskId: args.task.id,
+      taskVersion: args.task.spec.version,
+      track: args.track.track,
+      mode: args.mode,
+      interactionMode: args.interactionMode,
       model: {
         provider: args.modelId.split("/")[0] ?? "unknown",
         modelId: args.modelId,
-        temperature,
+        temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
       },
       prompt: {
@@ -248,7 +377,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         path: toPosixPath(path.relative(attemptDir, path.join(attemptDir, "prompt.txt"))),
       },
       retrieval: {
-        enabled: mode === "retrieval",
+        enabled: args.mode === "retrieval",
       },
       artifacts: {
         rawModelOutputPath: toPosixPath(path.relative(attemptDir, path.join(attemptDir, "raw-output.txt"))),
@@ -261,27 +390,9 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         commandLogsPath: toPosixPath(path.relative(attemptDir, path.join(logsDir, "build.json"))),
       },
       tests: {
-        public: {
-          passed: publicStage.summary.passed,
-          total: publicStage.summary.total,
-          commandLogsPath: publicStage.commandLogPath
-            ? toPosixPath(path.relative(attemptDir, publicStage.commandLogPath))
-            : undefined,
-        },
-        hidden: {
-          passed: hiddenStage.summary.passed,
-          total: hiddenStage.summary.total,
-          commandLogsPath: hiddenStage.commandLogPath
-            ? toPosixPath(path.relative(attemptDir, hiddenStage.commandLogPath))
-            : undefined,
-        },
-        adversarial: {
-          passed: adversarialStage.summary.passed,
-          total: adversarialStage.summary.total,
-          commandLogsPath: adversarialStage.commandLogPath
-            ? toPosixPath(path.relative(attemptDir, adversarialStage.commandLogPath))
-            : undefined,
-        },
+        public: toAttemptTestStage(attemptDir, publicStage),
+        hidden: toAttemptTestStage(attemptDir, hiddenStage),
+        adversarial: toAttemptTestStage(attemptDir, adversarialStage),
       },
       score: {
         total: scoreBreakdown.total,
@@ -298,17 +409,11 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         hidden: hiddenStage.summary,
         adversarial: adversarialStage.summary,
       }),
-      toolchain,
+      toolchain: args.toolchain,
     };
 
-    await persistResultArtifacts({
+    await persistAttemptArtifacts({
       attemptDir,
-      runDir,
-      runId,
-      attemptId,
-      taskId: task.id,
-      track: track.track,
-      modelId: args.modelId,
       result,
     });
 
@@ -324,17 +429,19 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
 
     const result: AttemptResult = {
       status: "failed",
-      runId,
+      runId: args.runId,
       attemptId,
-      taskId: task.id,
-      taskVersion: task.spec.version,
-      track: track.track,
-      mode,
-      interactionMode,
+      attemptNumber: args.attemptNumber,
+      maxAttempts: args.maxAttempts,
+      taskId: args.task.id,
+      taskVersion: args.task.spec.version,
+      track: args.track.track,
+      mode: args.mode,
+      interactionMode: args.interactionMode,
       model: {
         provider: args.modelId.split("/")[0] ?? "unknown",
         modelId: args.modelId,
-        temperature,
+        temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
       },
       prompt: {
@@ -342,7 +449,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         path: toPosixPath(path.relative(attemptDir, path.join(attemptDir, "prompt.txt"))),
       },
       retrieval: {
-        enabled: mode === "retrieval",
+        enabled: args.mode === "retrieval",
       },
       artifacts: {
         rawModelOutputPath: toPosixPath(path.relative(attemptDir, path.join(attemptDir, "raw-output.txt"))),
@@ -357,14 +464,17 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         public: {
           passed: 0,
           total: 0,
+          failures: [],
         },
         hidden: {
           passed: 0,
           total: 0,
+          failures: [],
         },
         adversarial: {
           passed: 0,
           total: 0,
+          failures: [],
         },
       },
       score: {
@@ -382,7 +492,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
         latencyMs: modelResponse?.latencyMs ?? 0,
       },
       failureClasses: classifyRunnerError(errorMessage),
-      toolchain,
+      toolchain: args.toolchain,
       error: {
         stage: currentStage,
         message: errorMessage,
@@ -391,14 +501,8 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
 
     await writeJsonFile(path.join(attemptDir, "score.json"), result.score);
     await writeJsonFile(path.join(attemptDir, "error.json"), result.error);
-    await persistResultArtifacts({
+    await persistAttemptArtifacts({
       attemptDir,
-      runDir,
-      runId,
-      attemptId,
-      taskId: task.id,
-      track: track.track,
-      modelId: args.modelId,
       result,
     });
 
@@ -408,6 +512,68 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<{ result: At
 
     return { result, attemptDir };
   }
+}
+
+async function buildAttemptPrompt(args: {
+  basePrompt: string;
+  previousResult?: AttemptResult;
+  previousAttemptDir?: string;
+}): Promise<string> {
+  if (!args.previousResult || !args.previousAttemptDir) {
+    return args.basePrompt;
+  }
+
+  const sections = [args.basePrompt.trim()];
+  sections.push("## Previous Attempt Feedback");
+  sections.push(`Attempt: ${args.previousResult.attemptNumber}/${args.previousResult.maxAttempts}`);
+  sections.push(`Status: ${args.previousResult.status}`);
+  sections.push(`Score: ${(args.previousResult.score.total * 100).toFixed(2)}/100`);
+  sections.push(`Build: ${args.previousResult.build.success ? "pass" : "fail"}`);
+  sections.push(
+    `Tests: public ${args.previousResult.tests.public.passed}/${args.previousResult.tests.public.total}, hidden ${args.previousResult.tests.hidden.passed}/${args.previousResult.tests.hidden.total}, adversarial ${args.previousResult.tests.adversarial.passed}/${args.previousResult.tests.adversarial.total}`,
+  );
+
+  if (args.previousResult.failureClasses.length > 0) {
+    sections.push(`Failure classes: ${args.previousResult.failureClasses.join(", ")}`);
+  }
+
+  if (args.previousResult.error) {
+    sections.push(
+      `Runner error: stage ${args.previousResult.error.stage} - ${args.previousResult.error.message}`,
+    );
+  }
+
+  const stageFeedback = [
+    ...formatStageFailures("Build", args.previousResult.error?.stage === "build" ? [args.previousResult.error.message] : []),
+    ...formatStageFailures("Public", args.previousResult.tests.public.failures ?? []),
+    ...formatStageFailures("Hidden", args.previousResult.tests.hidden.failures ?? []),
+    ...formatStageFailures("Adversarial", args.previousResult.tests.adversarial.failures ?? []),
+  ];
+
+  if (stageFeedback.length > 0) {
+    sections.push("### Failure Details");
+    sections.push(stageFeedback.join("\n"));
+  }
+
+  const previousFileMapPath = path.join(args.previousAttemptDir, "file-map.json");
+  if (await pathExists(previousFileMapPath)) {
+    const previousFileMap = await readJsonFile<ParsedModelOutput>(previousFileMapPath);
+    sections.push("## Previous Attempt Output");
+
+    for (const [relativePath, content] of Object.entries(previousFileMap.files)) {
+      sections.push(`### ${relativePath}`);
+      sections.push("```text");
+      sections.push(content.trimEnd());
+      sections.push("```");
+    }
+  }
+
+  sections.push("## Iteration Requirement");
+  sections.push(
+    "Use the feedback above to improve the solution. Return a complete replacement JSON file map for every editable file, not a diff.",
+  );
+
+  return `${sections.join("\n\n")}\n`;
 }
 
 async function executeInjectedStage(args: {
@@ -597,25 +763,71 @@ function extractCargoTestSummary(stdout: string): StageSummary | undefined {
   };
 }
 
-async function persistResultArtifacts(args: {
+async function persistAttemptArtifacts(args: {
   attemptDir: string;
-  runDir: string;
-  runId: string;
-  attemptId: string;
-  taskId: string;
-  track: string;
-  modelId: string;
   result: AttemptResult;
 }): Promise<void> {
   await writeJsonFile(path.join(args.attemptDir, "result.json"), args.result);
+}
+
+async function persistRunManifest(args: {
+  runDir: string;
+  runId: string;
+  taskId: string;
+  track: string;
+  modelId: string;
+  mode: InvocationMode;
+  interactionMode: InteractionMode;
+  run: BenchmarkRunSummary;
+  finalResult: AttemptResult;
+}): Promise<void> {
   await writeJsonFile(path.join(args.runDir, "manifest.json"), {
     runId: args.runId,
     createdAt: new Date().toISOString(),
     taskId: args.taskId,
     track: args.track,
     modelId: args.modelId,
-    attempts: [args.attemptId],
+    mode: args.mode,
+    interactionMode: args.interactionMode,
+    maxAttempts: args.run.maxAttempts,
+    attemptCount: args.run.attemptCount,
+    attempts: args.run.attemptIds,
+    reachedGreen: args.run.reachedGreen,
+    firstPassGreen: args.run.firstPassGreen,
+    greenAttemptNumber: args.run.greenAttemptNumber,
+    timeToGreenMs: args.run.timeToGreenMs,
+    totalDurationMs: args.run.totalDurationMs,
+    finalAttemptId: args.finalResult.attemptId,
+    finalStatus: args.finalResult.status,
+    finalScore: args.finalResult.score.total,
   });
+}
+
+function toAttemptTestStage(
+  attemptDir: string,
+  stage: AttemptStageResult,
+): {
+  passed: number;
+  total: number;
+  failures?: string[];
+  commandLogsPath?: string;
+} {
+  return {
+    passed: stage.summary.passed,
+    total: stage.summary.total,
+    failures: stage.summary.failures,
+    commandLogsPath: stage.commandLogPath
+      ? toPosixPath(path.relative(attemptDir, stage.commandLogPath))
+      : undefined,
+  };
+}
+
+function formatStageFailures(stage: string, failures: string[]): string[] {
+  return failures.map((failure) => `- ${stage}: ${failure}`);
+}
+
+function isGreenAttempt(result: AttemptResult): boolean {
+  return result.status === "completed" && result.score.total >= 0.9999;
 }
 
 function classifyRunnerError(message: string): string[] {

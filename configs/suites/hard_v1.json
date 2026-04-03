@@ -1,0 +1,13 @@
+{
+  "id": "hard_v1",
+  "title": "Hard Workflow Suite v1",
+  "description": "Harder but still practical tasks for choosing a model that can handle realistic custody, accounting, and multisig work in a normal development cycle.",
+  "tags": ["hard", "personal", "workflow"],
+  "targets": [
+    { "taskId": "escrow_basic", "track": "anchor", "weight": 2.5 },
+    { "taskId": "escrow_basic", "track": "native", "weight": 3 },
+    { "taskId": "vault_basic", "track": "anchor", "weight": 2.5 },
+    { "taskId": "vault_basic", "track": "native", "weight": 3 },
+    { "taskId": "multisig_treasury", "track": "anchor", "weight": 3.5 }
+  ]
+}

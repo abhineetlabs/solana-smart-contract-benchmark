@@ -1,0 +1,12 @@
+{
+  "id": "daily_v1",
+  "title": "Daily Workflow Suite v1",
+  "description": "Common smart-contract tasks for day-to-day model selection: smaller authority flows plus realistic vault and escrow work that should finish quickly.",
+  "tags": ["daily", "personal", "workflow"],
+  "targets": [
+    { "taskId": "counter_authority", "track": "anchor", "weight": 1 },
+    { "taskId": "counter_authority", "track": "native", "weight": 1.25 },
+    { "taskId": "escrow_basic", "track": "anchor", "weight": 1.75 },
+    { "taskId": "vault_basic", "track": "anchor", "weight": 2 }
+  ]
+}

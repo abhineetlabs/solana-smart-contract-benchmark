@@ -16,9 +16,11 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, migration-state safety, and multi-program CPI claim flows
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
+- practical personal workflow suites: `daily_v1`, `hard_v1`, `nightmare_v1`, and `personal_ranking_v1`
+- private task and private suite scaffolding under `tasks-private/` and `configs/suites/private/`
 - mock baselines plus Claude Code, Codex CLI, Gemini CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
-- local self-check, warm-cache, run-all, compare, and suite commands
+- local self-check, warm-cache, run-all, compare, suite commands, and multi-attempt time-to-green runs
 
 ## Quickstart
 
@@ -51,6 +53,9 @@ npm install --ignore-scripts
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model gemini/default --track anchor --task counter_authority
 ./benchmark run --model opencode/default --track anchor --task counter_authority
+./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite ranking_v1
 ./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
 ./benchmark compare
@@ -123,13 +128,17 @@ Run the whole currently supported benchmark matrix for a model:
 ./benchmark run-all --model claude-code/sonnet --difficulty hard
 ```
 
-Run the frozen ranking suite instead of the whole evolving task matrix:
+Run one of the workflow-oriented suites instead of the whole evolving task matrix:
 
 ```bash
 ./benchmark list suites
+./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite hard_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite nightmare_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite ranking_v1
 ./benchmark run-all --model codex/default --suite ranking_v1
-./benchmark compare --suite ranking_v1
+./benchmark compare --suite personal_ranking_v1
 ```
 
 Optional filters:
@@ -139,7 +148,15 @@ Optional filters:
 ./benchmark run-all --model claude-code/sonnet --track anchor
 ./benchmark run-all --model claude-code/sonnet --task escrow_basic
 ./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
+./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 3
 ./benchmark run-all --model claude-code/sonnet --warm-cache
+```
+
+For iterative dev-workflow testing instead of one-shot scoring:
+
+```bash
+./benchmark run --model claude-code/sonnet --track anchor --task staking_pool_rewards --max-attempts 3
+./benchmark run-all --model codex/default --suite personal_ranking_v1 --max-attempts 2
 ```
 
 Inspect the latest saved sweep report:
@@ -183,6 +200,44 @@ Cross-task sweeps are no longer averaged equally by default. The benchmark now u
 
 That means a model can no longer offset weak performance on the hardest tasks just by cleaning up easier pairs.
 
+## Workflow Metrics
+
+For personal model selection, the benchmark can now run multiple attempts per task and report:
+
+- weighted score
+- whether the model ever got to green
+- whether it succeeded on the first attempt
+- attempts used
+- time to green
+
+This is controlled with `--max-attempts <n>`. A first-pass success stops early. A model that never fully solves the task will consume all attempts and report `Green: no`.
+
+That makes the benchmark much closer to an actual coding workflow where you care about:
+
+- does the model get there eventually
+- how many repair loops it needs
+- how long it takes before you can move on
+
+## Personal Suites
+
+The repo now ships with four practical suite tiers:
+
+- `daily_v1`: smaller, common smart-contract work for quick model checks
+- `hard_v1`: realistic harder custody, accounting, and multisig tasks
+- `nightmare_v1`: ugly repair, CPI, and migration tasks
+- `personal_ranking_v1`: a workflow-weighted blend intended for picking your default daily model
+
+`personal_ranking_v1` uses workflow-aware weight rules, so repair, migration, and native tasks count more heavily than easy public generation tasks.
+
+## Private Holdouts
+
+You can now keep unpublished tasks and suite definitions locally:
+
+- `tasks-private/` for private benchmark tasks
+- `configs/suites/private/` for private suite JSONs
+
+Both are ignored by git by default, and the loader now discovers them automatically. Use the committed README/example files in those directories as scaffolding.
+
 ## What It Measures
 
 - task completion behavior
@@ -195,12 +250,14 @@ That means a model can no longer offset weak performance on the hardest tasks ju
 - reproducible offline evaluation
 - suite-level comparison with category, track, and failure-hotspot breakdowns
 - repeated sweeps for quick stability checks on the same slice
+- time-to-green and attempts-to-green for iterative workflow comparisons
 
 ## Current Limitations
 
 - retrieval mode is not implemented yet
 - there is not yet a richer leaderboard-style or HTML reporting layer
 - only three native tasks are implemented so far, and both `escrow_basic/native` and `vault_basic/native` currently validate pre-created custody token accounts instead of creating them inside the program
+- repair retries currently feed back benchmark failure details into the next attempt, which is useful for personal workflow selection but should not be treated as a contamination-resistant public benchmark mode
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
 - Gemini runs depend on a local authenticated `gemini` CLI session, and offline benchmark invocations will fail if Gemini uses any tools during the run

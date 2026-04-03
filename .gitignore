@@ -9,3 +9,10 @@ tmp-anchor-counter-sample/
 **/target/
 results/*
 !results/.gitkeep
+tasks-private/*
+!tasks-private/.gitkeep
+!tasks-private/README.md
+configs/suites/private/*
+!configs/suites/private/.gitkeep
+!configs/suites/private/README.md
+!configs/suites/private/*.example.json

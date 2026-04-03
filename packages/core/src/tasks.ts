@@ -13,65 +13,63 @@ import type {
 } from "./types.js";
 
 export async function discoverTasks(rootDir: string): Promise<TaskDescriptor[]> {
-  const tasksDir = path.join(rootDir, "tasks");
-  if (!(await pathExists(tasksDir))) {
-    return [];
-  }
-
-  const taskEntries = await readdir(tasksDir, { withFileTypes: true });
   const taskDescriptors: TaskDescriptor[] = [];
 
-  for (const entry of taskEntries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
+  for (const tasksDir of await getTaskSearchRoots(rootDir)) {
+    const taskEntries = await readdir(tasksDir, { withFileTypes: true });
 
-    const taskRoot = path.join(tasksDir, entry.name);
-    const coreDir = path.join(taskRoot, "core");
-    const specPath = path.join(coreDir, "spec.json");
-
-    if (!(await pathExists(specPath))) {
-      continue;
-    }
-
-    const spec = await readJsonFile<TaskSpec>(specPath);
-    const promptPath = path.join(coreDir, "prompt.md");
-    const rubricPath = path.join(coreDir, "rubric.json");
-    const tracks: Partial<Record<TrackId, TaskTrackDescriptor>> = {};
-
-    for (const track of spec.supportedTracks) {
-      const trackRoot = path.join(taskRoot, track);
-      const trackConfigPath = path.join(trackRoot, "track.config.json");
-      if (!(await pathExists(trackConfigPath))) {
+    for (const entry of taskEntries) {
+      if (!entry.isDirectory()) {
         continue;
       }
 
-      const config = await readJsonFile<TrackConfig>(trackConfigPath);
+      const taskRoot = path.join(tasksDir, entry.name);
+      const coreDir = path.join(taskRoot, "core");
+      const specPath = path.join(coreDir, "spec.json");
 
-      tracks[track] = {
-        track,
-        rootDir: trackRoot,
-        starterDir: path.join(trackRoot, "starter"),
-        trackConfigPath,
-        publicTestsDir: path.join(trackRoot, "starter", "tests-public"),
-        hiddenTestsDir: path.join(trackRoot, "tests-hidden"),
-        adversarialTestsDir: path.join(trackRoot, "tests-adversarial"),
-        referenceSolutionDir: path.join(trackRoot, "reference-solution"),
-        insecureSolutionDir: path.join(trackRoot, "insecure-solution"),
-        config,
-      };
+      if (!(await pathExists(specPath))) {
+        continue;
+      }
+
+      const spec = await readJsonFile<TaskSpec>(specPath);
+      const promptPath = path.join(coreDir, "prompt.md");
+      const rubricPath = path.join(coreDir, "rubric.json");
+      const tracks: Partial<Record<TrackId, TaskTrackDescriptor>> = {};
+
+      for (const track of spec.supportedTracks) {
+        const trackRoot = path.join(taskRoot, track);
+        const trackConfigPath = path.join(trackRoot, "track.config.json");
+        if (!(await pathExists(trackConfigPath))) {
+          continue;
+        }
+
+        const config = await readJsonFile<TrackConfig>(trackConfigPath);
+
+        tracks[track] = {
+          track,
+          rootDir: trackRoot,
+          starterDir: path.join(trackRoot, "starter"),
+          trackConfigPath,
+          publicTestsDir: path.join(trackRoot, "starter", "tests-public"),
+          hiddenTestsDir: path.join(trackRoot, "tests-hidden"),
+          adversarialTestsDir: path.join(trackRoot, "tests-adversarial"),
+          referenceSolutionDir: path.join(trackRoot, "reference-solution"),
+          insecureSolutionDir: path.join(trackRoot, "insecure-solution"),
+          config,
+        };
+      }
+
+      taskDescriptors.push({
+        id: spec.id,
+        rootDir: taskRoot,
+        coreDir,
+        specPath,
+        promptPath,
+        rubricPath,
+        spec,
+        tracks,
+      });
     }
-
-    taskDescriptors.push({
-      id: spec.id,
-      rootDir: taskRoot,
-      coreDir,
-      specPath,
-      promptPath,
-      rubricPath,
-      spec,
-      tracks,
-    });
   }
 
   return taskDescriptors.sort((left, right) => left.id.localeCompare(right.id));
@@ -110,4 +108,17 @@ export async function validateAllTasks(rootDir: string): Promise<ValidationResul
     tasks,
     issues,
   };
+}
+
+async function getTaskSearchRoots(rootDir: string): Promise<string[]> {
+  const candidates = [path.join(rootDir, "tasks"), path.join(rootDir, "tasks-private")];
+  const roots: string[] = [];
+
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      roots.push(candidate);
+    }
+  }
+
+  return roots;
 }

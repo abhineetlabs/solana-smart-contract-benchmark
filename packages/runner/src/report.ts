@@ -5,12 +5,13 @@ import path from "node:path";
 import {
   discoverTasks,
   type Difficulty,
+  type InteractionMode,
   type InvocationMode,
   type TrackId,
 } from "../../core/src/index.js";
 import { ensureDir, pathExists, readJsonFile, writeJsonFile } from "../../shared/src/index.js";
-import { runBenchmark, type AttemptResult } from "./run.js";
-import { loadBenchmarkSuite } from "./suites.js";
+import { runBenchmark, type BenchmarkExecution, type AttemptResult } from "./run.js";
+import { loadBenchmarkSuite, type BenchmarkSuite, type BenchmarkSuiteTarget } from "./suites.js";
 import { warmTaskCache } from "./warm.js";
 
 export interface BenchmarkTarget {
@@ -18,6 +19,7 @@ export interface BenchmarkTarget {
   track: TrackId;
   category: string;
   difficulty: Difficulty;
+  interactionMode: InteractionMode;
   title: string;
   weight: number;
 }
@@ -27,6 +29,7 @@ export interface SweepEntry {
   track: TrackId;
   category: string;
   difficulty: Difficulty;
+  interactionMode: InteractionMode;
   title: string;
   weight: number;
   runId: string;
@@ -38,6 +41,13 @@ export interface SweepEntry {
   failureClasses: string[];
   resultPath: string;
   attemptDir: string;
+  attemptCount: number;
+  maxAttempts: number;
+  reachedGreen: boolean;
+  firstPassGreen: boolean;
+  greenAttemptNumber?: number;
+  timeToGreenMs?: number;
+  totalDurationMs: number;
 }
 
 export interface SweepSummary {
@@ -46,7 +56,11 @@ export interface SweepSummary {
   completedTargets: number;
   failedTargets: number;
   buildPassedTargets: number;
+  greenTargets: number;
+  firstPassGreenTargets: number;
   averageScore: number;
+  averageAttemptsUsed: number;
+  averageTimeToGreenMs?: number;
 }
 
 export interface SweepReport {
@@ -56,6 +70,7 @@ export interface SweepReport {
   mode: InvocationMode;
   warmed: boolean;
   suiteId?: string;
+  maxAttempts: number;
   summary: SweepSummary;
   entries: SweepEntry[];
 }
@@ -69,6 +84,7 @@ interface RunBenchmarkSweepArgs {
   taskId?: string;
   difficulty?: Difficulty;
   warmCache?: boolean;
+  maxAttempts?: number;
 }
 
 interface LoadSweepReportsArgs {
@@ -100,13 +116,19 @@ export async function listBenchmarkTargets(args: {
         throw new Error(`Suite "${suite.id}" references unavailable pair "${target.taskId}/${target.track}".`);
       }
 
+      const interactionMode = task.spec.supportedModes[0] ?? "generate";
       return {
         taskId: task.id,
         track: target.track,
         category: task.spec.category,
         difficulty: task.spec.difficulty,
+        interactionMode,
         title: task.spec.title,
-        weight: normalizeTargetWeight(target.weight ?? defaultDifficultyWeight(task.spec.difficulty)),
+        weight: normalizeTargetWeight(computeSuiteTargetWeight(suite, target, {
+          category: task.spec.category,
+          difficulty: task.spec.difficulty,
+          interactionMode,
+        })),
       };
     });
   }
@@ -136,6 +158,7 @@ export async function listBenchmarkTargets(args: {
         track: supportedTrack,
         category: task.spec.category,
         difficulty: task.spec.difficulty,
+        interactionMode: task.spec.supportedModes[0] ?? "generate",
         title: task.spec.title,
         weight: defaultDifficultyWeight(task.spec.difficulty),
       });
@@ -154,6 +177,7 @@ export async function listBenchmarkTargets(args: {
 
 export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<SweepReport> {
   const mode = args.mode ?? "offline";
+  const maxAttempts = args.maxAttempts ?? 1;
   const targets = await listBenchmarkTargets({
     rootDir: args.rootDir,
     suiteId: args.suiteId,
@@ -184,9 +208,10 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
       track: target.track,
       modelId: args.modelId,
       mode,
+      maxAttempts,
     });
 
-    entries.push(toSweepEntry(target, args.rootDir, execution.result, execution.attemptDir));
+    entries.push(toSweepEntry(target, args.rootDir, execution));
   }
 
   const report: SweepReport = {
@@ -196,6 +221,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     mode,
     warmed: args.warmCache ?? false,
     suiteId: args.suiteId,
+    maxAttempts,
     summary: computeSweepSummary(entries),
     entries,
   };
@@ -241,25 +267,32 @@ export async function loadSweepReports(args: LoadSweepReportsArgs): Promise<Swee
 function toSweepEntry(
   target: BenchmarkTarget,
   rootDir: string,
-  result: AttemptResult,
-  attemptDir: string,
+  execution: BenchmarkExecution,
 ): SweepEntry {
   return {
     taskId: target.taskId,
     track: target.track,
     category: target.category,
     difficulty: target.difficulty,
+    interactionMode: target.interactionMode,
     title: target.title,
     weight: target.weight,
-    runId: result.runId,
-    attemptId: result.attemptId,
-    status: result.status,
-    score: result.score.total,
-    buildSuccess: result.build.success,
-    tests: result.tests,
-    failureClasses: result.failureClasses,
-    resultPath: path.relative(rootDir, path.join(attemptDir, "result.json")),
-    attemptDir: path.relative(rootDir, attemptDir),
+    runId: execution.result.runId,
+    attemptId: execution.result.attemptId,
+    status: execution.result.status,
+    score: execution.result.score.total,
+    buildSuccess: execution.result.build.success,
+    tests: execution.result.tests,
+    failureClasses: execution.result.failureClasses,
+    resultPath: path.relative(rootDir, path.join(execution.attemptDir, "result.json")),
+    attemptDir: path.relative(rootDir, execution.attemptDir),
+    attemptCount: execution.run.attemptCount,
+    maxAttempts: execution.run.maxAttempts,
+    reachedGreen: execution.run.reachedGreen,
+    firstPassGreen: execution.run.firstPassGreen,
+    greenAttemptNumber: execution.run.greenAttemptNumber,
+    timeToGreenMs: execution.run.timeToGreenMs,
+    totalDurationMs: execution.run.totalDurationMs,
   };
 }
 
@@ -278,7 +311,11 @@ function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
     completedTargets,
     failedTargets: entries.length - completedTargets,
     buildPassedTargets,
+    greenTargets: entries.filter((entry) => entry.reachedGreen).length,
+    firstPassGreenTargets: entries.filter((entry) => entry.firstPassGreen).length,
     averageScore: totalWeight === 0 ? 0 : roundScore(totalScore / totalWeight),
+    averageAttemptsUsed: roundAttempts(weightedAverage(entries, (entry) => entry.attemptCount)),
+    averageTimeToGreenMs: weightedAverage(entries, (entry) => entry.timeToGreenMs, (entry) => entry.reachedGreen),
   };
 }
 
@@ -293,36 +330,73 @@ function createSweepId(): string {
 }
 
 async function normalizeSweepReport(rootDir: string, report: SweepReport): Promise<SweepReport> {
-  const suiteWeightMap = report.suiteId
-    ? await loadSuiteWeightMap(rootDir, report.suiteId).catch(() => undefined)
-    : undefined;
-  const entries = report.entries.map((entry) => ({
-    ...entry,
-    weight: normalizeTargetWeight(
+  const tasks = await discoverTasks(rootDir);
+  const taskMap = new Map(tasks.map((task) => [task.id, task]));
+  const suite = report.suiteId ? await loadBenchmarkSuite(rootDir, report.suiteId).catch(() => undefined) : undefined;
+
+  const entries = report.entries.map((entry) => {
+    const task = taskMap.get(entry.taskId);
+    const interactionMode = entry.interactionMode ?? task?.spec.supportedModes[0] ?? "generate";
+    const suiteTarget = suite?.targets.find(
+      (target) => target.taskId === entry.taskId && target.track === entry.track,
+    );
+
+    const weight =
       entry.weight ??
-        suiteWeightMap?.get(`${entry.taskId}/${entry.track}`) ??
-        defaultDifficultyWeight(entry.difficulty),
-    ),
-  }));
+      (suite && suiteTarget
+        ? computeSuiteTargetWeight(suite, suiteTarget, {
+            category: entry.category,
+            difficulty: entry.difficulty,
+            interactionMode,
+          })
+        : defaultDifficultyWeight(entry.difficulty));
+
+    const reachedGreen = entry.reachedGreen ?? inferGreenFromEntry(entry);
+    const greenAttemptNumber = entry.greenAttemptNumber ?? (reachedGreen ? 1 : undefined);
+    const attemptCount = entry.attemptCount ?? 1;
+
+    return {
+      ...entry,
+      interactionMode,
+      weight: normalizeTargetWeight(weight),
+      attemptCount,
+      maxAttempts: entry.maxAttempts ?? attemptCount,
+      reachedGreen,
+      firstPassGreen: entry.firstPassGreen ?? (reachedGreen && attemptCount === 1),
+      greenAttemptNumber,
+      timeToGreenMs: entry.timeToGreenMs,
+      totalDurationMs: entry.totalDurationMs ?? entry.timeToGreenMs ?? 0,
+    };
+  });
 
   return {
     ...report,
+    maxAttempts: report.maxAttempts ?? Math.max(...entries.map((entry) => entry.maxAttempts), 1),
     entries,
     summary: computeSweepSummary(entries),
   };
 }
 
-async function loadSuiteWeightMap(rootDir: string, suiteId: string): Promise<Map<string, number>> {
-  const suite = await loadBenchmarkSuite(rootDir, suiteId);
-  const weights = new Map<string, number>();
-
-  for (const target of suite.targets) {
-    if (target.weight !== undefined) {
-      weights.set(`${target.taskId}/${target.track}`, normalizeTargetWeight(target.weight));
-    }
+function computeSuiteTargetWeight(
+  suite: BenchmarkSuite,
+  target: BenchmarkSuiteTarget,
+  context: {
+    category: string;
+    difficulty: Difficulty;
+    interactionMode: InteractionMode;
+  },
+): number {
+  if (target.weight !== undefined) {
+    return target.weight;
   }
 
-  return weights;
+  const base = suite.weightRules?.base ?? 1;
+  const difficultyWeight = suite.weightRules?.difficulty?.[context.difficulty] ?? defaultDifficultyWeight(context.difficulty);
+  const interactionModeWeight = suite.weightRules?.interactionMode?.[context.interactionMode] ?? 1;
+  const trackWeight = suite.weightRules?.track?.[target.track] ?? 1;
+  const categoryWeight = suite.weightRules?.category?.[context.category] ?? 1;
+
+  return base * difficultyWeight * interactionModeWeight * trackWeight * categoryWeight;
 }
 
 function defaultDifficultyWeight(difficulty: Difficulty): number {
@@ -338,6 +412,40 @@ function defaultDifficultyWeight(difficulty: Difficulty): number {
   }
 }
 
+function weightedAverage(
+  entries: SweepEntry[],
+  pick: (entry: SweepEntry) => number | undefined,
+  include: (entry: SweepEntry) => boolean = () => true,
+): number | undefined {
+  let totalWeight = 0;
+  let weightedSum = 0;
+
+  for (const entry of entries) {
+    if (!include(entry)) {
+      continue;
+    }
+
+    const value = pick(entry);
+    if (value === undefined) {
+      continue;
+    }
+
+    const weight = normalizeTargetWeight(entry.weight);
+    totalWeight += weight;
+    weightedSum += value * weight;
+  }
+
+  if (totalWeight === 0) {
+    return undefined;
+  }
+
+  return Number((weightedSum / totalWeight).toFixed(2));
+}
+
+function inferGreenFromEntry(entry: Pick<SweepEntry, "status" | "score">): boolean {
+  return entry.status === "completed" && entry.score >= 0.9999;
+}
+
 function normalizeTargetWeight(weight: number): number {
   return roundWeight(weight);
 }
@@ -348,4 +456,8 @@ function roundScore(value: number): number {
 
 function roundWeight(value: number): number {
   return Number(value.toFixed(2));
+}
+
+function roundAttempts(value: number | undefined): number {
+  return Number((value ?? 0).toFixed(2));
 }

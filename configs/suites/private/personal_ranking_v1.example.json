@@ -1,0 +1,28 @@
+{
+  "id": "personal_private_v1",
+  "title": "Personal Private Ranking Suite v1",
+  "description": "Example private suite scaffold that mixes your unpublished holdout tasks with a few public calibration tasks.",
+  "tags": ["personal", "private", "workflow"],
+  "weightRules": {
+    "base": 1,
+    "difficulty": {
+      "easy": 0.75,
+      "medium": 1.0,
+      "hard": 1.5
+    },
+    "interactionMode": {
+      "generate": 1.0,
+      "repair": 1.4,
+      "migrate": 1.6
+    },
+    "track": {
+      "anchor": 1.0,
+      "native": 1.25
+    }
+  },
+  "targets": [
+    { "taskId": "my_private_anchor_bugfix", "track": "anchor", "weight": 5 },
+    { "taskId": "my_private_native_migration", "track": "native", "weight": 6 },
+    { "taskId": "vault_receipt_migration", "track": "anchor" }
+  ]
+}

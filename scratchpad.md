@@ -20,7 +20,8 @@
 - Current completed goal: the benchmark now supports OpenCode CLI execution through a default route and explicit provider/model routes.
 - Current completed goal: the benchmark now supports frozen suite definitions, repeated sweeps, richer compare breakdowns, and aggregate self-checks across multi-target slices.
 - Current completed goal: the benchmark now includes a migration-style hard task, `vault_receipt_migration`, and it is promoted into the frozen `ranking_v1` suite.
-- Current next goal: expand hard native coverage and add more migration or exploit-fix tasks after the first ranking-suite migration task.
+- Current completed goal: the benchmark now supports personal workflow suites, private task/suite scaffolding, and multi-attempt time-to-green evaluation.
+- Current next goal: expand private holdout coverage and calibrate the personal suite weights against the models actually used in daily smart-contract work.
 
 ## Decisions Made
 
@@ -44,6 +45,10 @@
 - Keep benchmark suite runs sequential; overlapping Anchor/localnet-backed sweeps can interfere with validators and contaminate results.
 - Freeze the first official comparison slice as `configs/suites/ranking_v1.json` instead of tying ranking claims to the ever-growing full task matrix.
 - Keep attempt scores normalized internally, but present human-facing CLI scores on a `0` to `100` scale and weight cross-task sweep averages by difficulty or explicit suite weights.
+- Discover both committed public tasks from `tasks/` and untracked private holdout tasks from `tasks-private/`.
+- Discover suites recursively under `configs/suites/`, but ignore `.example.json` scaffolds so private templates do not show up as runnable suites.
+- Support workflow-weighted suites through `weightRules`, so personal ranking slices can upweight repair, migration, native, or category-specific work without editing task-level scoring.
+- Treat multi-attempt runs as a first-class workflow metric: stop early on the first green pass, persist attempts-used and time-to-green, and feed previous-attempt feedback into later attempts for personal dev-workflow comparisons.
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
@@ -70,9 +75,9 @@
 ## Immediate Work Queue
 
 1. Improve failure-class mapping from test names and failure payloads.
-2. Bring another hard task or repair task onto `native`.
-3. Add pairwise or model-level ranking summaries across multiple suite sweeps.
-4. Add a public-facing reporting layer once the ranking suite is stable enough to freeze.
+2. Add real private holdout tasks under `tasks-private/` so the personal workflow suites become genuinely discriminative.
+3. Bring another hard task or repair task onto `native`.
+4. Add pairwise or model-level ranking summaries across multiple suite sweeps.
 5. Add more migration or exploit-fix tasks once the next native-hard slice lands.
 
 ## Milestones Reached
@@ -120,6 +125,14 @@
   - `./benchmark list suites` shows available named suite definitions
   - `ranking_v1` is stored at `configs/suites/ranking_v1.json`
   - `./benchmark run-all --suite ranking_v1` evaluates the frozen hard comparison slice instead of the whole evolving matrix
+- Personal workflow suite support implemented:
+  - committed tier suites now include `daily_v1`, `hard_v1`, `nightmare_v1`, and `personal_ranking_v1`
+  - private suite scaffolds now live under `configs/suites/private/`
+  - private tasks can now be added under `tasks-private/` and are discovered automatically by `validate`, `list tasks`, `run`, and `run-all`
+  - suite loading is recursive and ignores `.example.json` scaffolds
+- Workflow-weighted scoring implemented:
+  - suite definitions can now provide `weightRules` for difficulty, interaction mode, track, and category
+  - `personal_ranking_v1` uses workflow-weighted aggregation instead of only explicit per-target weights
 - Migration-style hard task implemented:
   - `vault_receipt_migration` on `anchor`
   - focus: legacy-to-v2 vault and receipt upgrades, ownership preservation, withdrawal-history preservation, and post-migration destination validation
@@ -127,12 +140,21 @@
 - Sweep runner improvements implemented:
   - `./benchmark run-all --repeats <n>` repeats the same target slice multiple times and prints an overview plus model aggregate summary
   - sweep reports now persist `suiteId` and task `category`
+- Multi-attempt workflow evaluation implemented:
+  - `./benchmark run --max-attempts <n>` retries a task until the first green pass or until attempts are exhausted
+  - `./benchmark run-all --max-attempts <n>` applies the same behavior across a suite or filtered matrix
+  - repeated attempts receive the previous attempt's score, failure classes, failure details, and prior generated file contents as repair feedback
+  - run manifests now persist attempts used, first-pass success, green attempt number, and time-to-green
 - Scoring/reporting improvements implemented:
   - CLI score display now uses a human-facing `0` to `100` scale instead of raw normalized decimals
   - attempt-level scoring remains normalized internally from each task's stage weights
   - cross-task sweep averages now use weighted aggregation instead of equal averaging
   - default weights are difficulty-based: `easy=1`, `medium=2`, `hard=3`
   - `ranking_v1` now overrides those defaults with explicit per-target weights so harder repair, migration, CPI, and native targets matter more
+- Workflow reporting improvements implemented:
+  - sweep summaries now include green rate, first-pass rate, average attempts used, and average time-to-green
+  - per-pair rows now show whether the target ever went green, how many attempts were used, and the measured time-to-green
+  - category, track, and model aggregates now expose the same workflow metrics
 - Compare/reporting improvements implemented:
   - `./benchmark compare --suite <suite>` filters to a frozen suite
   - single-report output now includes category aggregates, track aggregates, and failure-hotspot summaries
@@ -157,6 +179,10 @@
   - `./benchmark run --model claude-code/sonnet --track anchor --task counter_authority`
   - `./benchmark run --model codex/default --track anchor --task counter_authority`
   - `./benchmark run --model gemini/default --track anchor --task counter_authority`
+  - `./benchmark run --model mock/reference --track anchor --task counter_authority --max-attempts 2`
+  - `./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2`
+  - `./benchmark run-all --model mock/reference --suite daily_v1 --max-attempts 2`
+  - `./benchmark compare --latest 1 --suite daily_v1`
   - `./benchmark self-check`
 - OpenCode verification notes:
   - `opencode run --format json 'Reply with exactly the JSON object {"answer":"ok"} and nothing else.'` succeeds outside the Codex sandbox and returns JSON events with text plus token usage
@@ -198,6 +224,27 @@
   - hidden tests passed `3/3`
   - adversarial tests passed `3/3`
   - total score `1.0`
+- Latest verified multi-attempt green run result:
+  - command `./benchmark run --model mock/reference --track anchor --task counter_authority --max-attempts 2`
+  - final attempt `counter_authority_anchor_offline_attempt1`
+  - attempts used `1/2`
+  - green `yes`
+  - time-to-green `50.7s`
+- Latest verified multi-attempt non-green run result:
+  - command `./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2`
+  - final attempt `staking_pool_rewards_anchor_offline_attempt2`
+  - attempts used `2/2`
+  - green `no`
+  - final score `0.25`
+- Latest verified daily workflow suite sweep:
+  - command `./benchmark run-all --model mock/reference --suite daily_v1 --max-attempts 2`
+  - sweep id `2026-04-03T12-09-09-403Z_ddf32326`
+  - pairs `4`
+  - green `4/4`
+  - first-pass `4/4`
+  - average attempts `1.0`
+  - average time-to-green `68.9s`
+  - weighted average score `1.0`
 - Latest verified Gemini CLI smoke result:
   - command `gemini -p 'Reply with exactly {"files":{"answer.txt":"ok"}}' --output-format json`
   - returned the expected top-level `response`

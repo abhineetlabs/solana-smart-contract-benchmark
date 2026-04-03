@@ -113,7 +113,7 @@ async function handleList(args: string[]): Promise<void> {
     }
 
     for (const suite of suites) {
-      console.log(`${suite.id}\t${suite.targets.length}\t${suite.title}`);
+      console.log(`${suite.id}\t${suite.targets.length}\t${suite.tags?.join(",") ?? "-"}\t${suite.title}`);
     }
     return;
   }
@@ -137,6 +137,9 @@ async function handleRun(args: string[]): Promise<void> {
       mode: {
         type: "string",
       },
+      "max-attempts": {
+        type: "string",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -146,9 +149,14 @@ async function handleRun(args: string[]): Promise<void> {
   const track = values.track;
   const taskId = values.task;
   const mode = values.mode as "offline" | "retrieval" | undefined;
+  const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
 
   if (!modelId || !track || !taskId) {
     throw new Error("run requires --model, --track, and --task.");
+  }
+
+  if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
+    throw new Error("run --max-attempts must be a positive integer.");
   }
 
   const execution = await runBenchmark({
@@ -157,10 +165,13 @@ async function handleRun(args: string[]): Promise<void> {
     track: track as "anchor" | "native" | "pinocchio",
     taskId,
     mode,
+    maxAttempts,
   });
 
   console.log(`Run complete: ${execution.result.attemptId}`);
   console.log(`Score: ${formatScore(execution.result.score.total)}/100`);
+  console.log(`Attempts: ${execution.run.attemptCount}/${execution.run.maxAttempts}`);
+  console.log(`Green: ${execution.run.reachedGreen ? `yes (attempt ${execution.run.greenAttemptNumber}, ${formatDurationMs(execution.run.timeToGreenMs)})` : "no"}`);
   console.log(`Build: ${execution.result.build.success ? "pass" : "fail"}`);
   console.log(
     `Public tests: ${execution.result.tests.public.passed}/${execution.result.tests.public.total}`,
@@ -252,6 +263,9 @@ async function handleRunAll(args: string[]): Promise<void> {
       "warm-cache": {
         type: "boolean",
       },
+      "max-attempts": {
+        type: "string",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -267,8 +281,13 @@ async function handleRunAll(args: string[]): Promise<void> {
   }
 
   const repeats = values.repeats ? Number(values.repeats) : 1;
+  const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
   if (!Number.isInteger(repeats) || repeats <= 0) {
     throw new Error("run-all --repeats must be a positive integer.");
+  }
+
+  if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
+    throw new Error("run-all --max-attempts must be a positive integer.");
   }
 
   const reports: SweepReport[] = [];
@@ -282,6 +301,7 @@ async function handleRunAll(args: string[]): Promise<void> {
       track: values.track as "anchor" | "native" | "pinocchio" | undefined,
       taskId: values.task,
       warmCache: values["warm-cache"],
+      maxAttempts,
     });
     reports.push(report);
 
@@ -289,7 +309,7 @@ async function handleRunAll(args: string[]): Promise<void> {
       printSweepReport(report);
     } else {
       console.log(
-        `Repeat ${index + 1}/${repeats}: ${report.sweepId} weighted average ${formatScore(report.summary.averageScore)}/100 build ${formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets)} failed ${report.summary.failedTargets}`,
+        `Repeat ${index + 1}/${repeats}: ${report.sweepId} weighted average ${formatScore(report.summary.averageScore)}/100 green ${formatStageRatio(report.summary.greenTargets, report.summary.totalTargets)} first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets)} avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}`,
       );
     }
   }
@@ -568,9 +588,10 @@ function printSweepReport(report: SweepReport): void {
   if (report.suiteId) {
     console.log(`Suite: ${report.suiteId}`);
   }
+  console.log(`Max attempts: ${report.maxAttempts}`);
   console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
   console.log(
-    `Summary: pairs ${report.summary.totalTargets}, weight ${formatWeight(report.summary.totalWeight)}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, build ${report.summary.buildPassedTargets}/${report.summary.totalTargets}, weighted average ${formatScore(report.summary.averageScore)}/100`,
+    `Summary: pairs ${report.summary.totalTargets}, weight ${formatWeight(report.summary.totalWeight)}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, green ${formatStageRatio(report.summary.greenTargets, report.summary.totalTargets)}, first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets)}, avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}, avg ttg ${formatDurationMs(report.summary.averageTimeToGreenMs)}, weighted average ${formatScore(report.summary.averageScore)}/100`,
   );
   console.log("Pairs:");
   console.log(
@@ -582,6 +603,9 @@ function printSweepReport(report: SweepReport): void {
       "track",
       "status",
       "score/100",
+      "green",
+      "attempts",
+      "ttg",
       "build",
       "public",
       "hidden",
@@ -599,6 +623,9 @@ function printSweepReport(report: SweepReport): void {
         entry.track,
         entry.status,
         formatScore(entry.score),
+        entry.reachedGreen ? "yes" : "no",
+        `${entry.attemptCount}/${entry.maxAttempts}`,
+        formatDurationMs(entry.timeToGreenMs),
         entry.buildSuccess ? "pass" : "fail",
         formatStageSummary(entry.buildSuccess, entry.tests.public.passed, entry.tests.public.total),
         formatStageSummary(entry.buildSuccess, entry.tests.hidden.passed, entry.tests.hidden.total),
@@ -616,7 +643,7 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "suite", "pairs", "weight", "completed", "failed", "build", "avg/100"]),
+    formatOverviewRow(["sweep", "model", "suite", "pairs", "green", "first", "attempts", "ttg", "avg/100"]),
   );
   for (const report of reports) {
     console.log(
@@ -625,10 +652,10 @@ function printSweepOverview(reports: SweepReport[]): void {
         report.modelId,
         report.suiteId ?? "-",
         String(report.summary.totalTargets),
-        formatWeight(report.summary.totalWeight),
-        String(report.summary.completedTargets),
-        String(report.summary.failedTargets),
-        formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets),
+        formatStageRatio(report.summary.greenTargets, report.summary.totalTargets),
+        formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets),
+        formatAttempts(report.summary.averageAttemptsUsed),
+        formatDurationMs(report.summary.averageTimeToGreenMs),
         formatScore(report.summary.averageScore),
       ]),
     );
@@ -636,17 +663,17 @@ function printSweepOverview(reports: SweepReport[]): void {
 }
 
 function formatReportRow(values: string[]): string {
-  const widths = [22, 14, 10, 8, 10, 10, 10, 8, 10, 10, 13, 24];
+  const widths = [22, 14, 10, 8, 10, 10, 10, 7, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 12, 8, 8, 10, 8, 8, 8];
+  const widths = [32, 20, 20, 6, 8, 8, 9, 8, 8];
   return formatRow(values, widths);
 }
 
 function formatAggregateRow(values: string[]): string {
-  const widths = [18, 8, 8, 8, 10, 10, 13, 10];
+  const widths = [18, 6, 8, 8, 8, 9, 8, 8, 10, 10, 13, 10];
   return formatRow(values, widths);
 }
 
@@ -682,6 +709,18 @@ function formatWeight(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+function formatAttempts(value: number): string {
+  return value.toFixed(2);
+}
+
+function formatDurationMs(value: number | undefined): string {
+  if (value === undefined) {
+    return "-";
+  }
+
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
 function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => string): Array<{ key: string; entries: SweepEntry[] }> {
   const buckets = new Map<string, SweepEntry[]>();
   for (const entry of entries) {
@@ -701,7 +740,22 @@ function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => s
 
 function printAggregateSection(title: string, aggregates: Array<{ key: string; entries: SweepEntry[] }>): void {
   console.log(title + ":");
-  console.log(formatAggregateRow(["group", "pairs", "weight", "build", "public", "hidden", "adversarial", "avg/100"]));
+  console.log(
+    formatAggregateRow([
+      "group",
+      "pairs",
+      "weight",
+      "green",
+      "first",
+      "attempts",
+      "ttg",
+      "build",
+      "public",
+      "hidden",
+      "adversarial",
+      "avg/100",
+    ]),
+  );
   for (const aggregate of aggregates) {
     const summary = summarizeEntries(aggregate.entries);
     console.log(
@@ -709,6 +763,10 @@ function printAggregateSection(title: string, aggregates: Array<{ key: string; e
         aggregate.key,
         String(summary.pairs),
         formatWeight(summary.totalWeight),
+        formatStageRatio(summary.greenTargets, summary.pairs),
+        formatStageRatio(summary.firstPassGreenTargets, summary.pairs),
+        formatAttempts(summary.averageAttemptsUsed),
+        formatDurationMs(summary.averageTimeToGreenMs),
         formatStageRatio(summary.buildPassed, summary.pairs),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
@@ -750,7 +808,22 @@ function printModelAggregateSection(reports: SweepReport[]): void {
   }
 
   console.log("Model aggregates:");
-  console.log(formatAggregateRow(["group", "pairs", "weight", "build", "public", "hidden", "adversarial", "avg/100"]));
+  console.log(
+    formatAggregateRow([
+      "group",
+      "pairs",
+      "weight",
+      "green",
+      "first",
+      "attempts",
+      "ttg",
+      "build",
+      "public",
+      "hidden",
+      "adversarial",
+      "avg/100",
+    ]),
+  );
   for (const [modelId, entries] of [...byModel.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
     const summary = summarizeEntries(entries);
     console.log(
@@ -758,6 +831,10 @@ function printModelAggregateSection(reports: SweepReport[]): void {
         modelId,
         String(summary.pairs),
         formatWeight(summary.totalWeight),
+        formatStageRatio(summary.greenTargets, summary.pairs),
+        formatStageRatio(summary.firstPassGreenTargets, summary.pairs),
+        formatAttempts(summary.averageAttemptsUsed),
+        formatDurationMs(summary.averageTimeToGreenMs),
         formatStageRatio(summary.buildPassed, summary.pairs),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
@@ -771,6 +848,10 @@ function printModelAggregateSection(reports: SweepReport[]): void {
 function summarizeEntries(entries: SweepEntry[]): {
   pairs: number;
   totalWeight: number;
+  greenTargets: number;
+  firstPassGreenTargets: number;
+  averageAttemptsUsed: number;
+  averageTimeToGreenMs?: number;
   buildPassed: number;
   publicPassed: number;
   publicTotal: number;
@@ -782,9 +863,20 @@ function summarizeEntries(entries: SweepEntry[]): {
 } {
   const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
   const totalScore = entries.reduce((sum, entry) => sum + entry.score * entry.weight, 0);
+  const greenEntries = entries.filter((entry) => entry.reachedGreen);
+  const greenWeight = greenEntries.reduce((sum, entry) => sum + entry.weight, 0);
+  const attemptsWeighted = entries.reduce((sum, entry) => sum + entry.attemptCount * entry.weight, 0);
+  const timeToGreenWeighted = greenEntries.reduce(
+    (sum, entry) => sum + (entry.timeToGreenMs ?? 0) * entry.weight,
+    0,
+  );
   return {
     pairs: entries.length,
     totalWeight,
+    greenTargets: greenEntries.length,
+    firstPassGreenTargets: entries.filter((entry) => entry.firstPassGreen).length,
+    averageAttemptsUsed: totalWeight === 0 ? 0 : attemptsWeighted / totalWeight,
+    averageTimeToGreenMs: greenWeight === 0 ? undefined : timeToGreenWeighted / greenWeight,
     buildPassed: entries.filter((entry) => entry.buildSuccess).length,
     publicPassed: entries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
     publicTotal: entries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
@@ -802,8 +894,8 @@ function printHelp(): void {
   benchmark list tasks
   benchmark list models
   benchmark list suites
-  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--warm-cache]
+  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
