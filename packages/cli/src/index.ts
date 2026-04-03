@@ -598,7 +598,7 @@ function printSweepReport(report: SweepReport): void {
   console.log(`Max attempts: ${report.maxAttempts}`);
   console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
   console.log(
-    `Summary: pairs ${report.summary.totalTargets}, weight ${formatWeight(report.summary.totalWeight)}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, green ${formatStageRatio(report.summary.greenTargets, report.summary.totalTargets)}, first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets)}, avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}, avg ttg ${formatDurationMs(report.summary.averageTimeToGreenMs)}, weighted average ${formatScore(report.summary.averageScore)}/100`,
+    `Summary: pairs ${report.summary.totalTargets}, scored ${report.summary.scoredTargets}, runtime-excluded ${report.summary.runtimeExcludedTargets}, scored weight ${formatWeight(report.summary.scoredWeight)}, green ${formatStageRatio(report.summary.greenTargets, report.summary.scoredTargets)}, first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.scoredTargets)}, avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}, avg ttg ${formatDurationMs(report.summary.averageTimeToGreenMs)}, capability score ${formatScore(report.summary.averageScore)}/100`,
   );
   console.log("Pairs:");
   console.log(
@@ -609,6 +609,7 @@ function printSweepReport(report: SweepReport): void {
       "weight",
       "track",
       "status",
+      "scoring",
       "score/100",
       "green",
       "attempts",
@@ -629,6 +630,7 @@ function printSweepReport(report: SweepReport): void {
         formatWeight(entry.weight),
         entry.track,
         entry.status,
+        formatScoringDisposition(entry),
         formatScore(entry.score),
         entry.reachedGreen ? "yes" : "no",
         `${entry.attemptCount}/${entry.maxAttempts}`,
@@ -651,7 +653,7 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "suite", "pairs", "green", "first", "attempts", "ttg", "avg/100"]),
+    formatOverviewRow(["sweep", "model", "suite", "pairs", "scored", "excluded", "green", "first", "attempts", "ttg", "avg/100"]),
   );
   for (const report of reports) {
     console.log(
@@ -660,8 +662,10 @@ function printSweepOverview(reports: SweepReport[]): void {
         report.modelId,
         report.suiteId ?? "-",
         String(report.summary.totalTargets),
-        formatStageRatio(report.summary.greenTargets, report.summary.totalTargets),
-        formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets),
+        String(report.summary.scoredTargets),
+        String(report.summary.runtimeExcludedTargets),
+        formatStageRatio(report.summary.greenTargets, report.summary.scoredTargets),
+        formatStageRatio(report.summary.firstPassGreenTargets, report.summary.scoredTargets),
         formatAttempts(report.summary.averageAttemptsUsed),
         formatDurationMs(report.summary.averageTimeToGreenMs),
         formatScore(report.summary.averageScore),
@@ -671,7 +675,7 @@ function printSweepOverview(reports: SweepReport[]): void {
 }
 
 function formatReportRow(values: string[]): string {
-  const widths = [22, 14, 10, 8, 10, 10, 10, 7, 10, 8, 8, 10, 10, 13, 24];
+  const widths = [22, 14, 10, 8, 10, 10, 20, 10, 7, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
 }
 
@@ -686,12 +690,12 @@ function formatSelectionFilters(report: SweepReport): string {
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 20, 6, 8, 8, 9, 8, 8];
+  const widths = [32, 20, 20, 6, 8, 9, 8, 8, 9, 8, 8];
   return formatRow(values, widths);
 }
 
 function formatAggregateRow(values: string[]): string {
-  const widths = [18, 6, 8, 8, 8, 9, 8, 8, 10, 10, 13, 10];
+  const widths = [18, 6, 7, 9, 8, 8, 9, 8, 8, 10, 10, 13, 10];
   return formatRow(values, widths);
 }
 
@@ -762,6 +766,8 @@ function printAggregateSection(title: string, aggregates: Array<{ key: string; e
     formatAggregateRow([
       "group",
       "pairs",
+      "scored",
+      "excluded",
       "weight",
       "green",
       "first",
@@ -780,12 +786,14 @@ function printAggregateSection(title: string, aggregates: Array<{ key: string; e
       formatAggregateRow([
         aggregate.key,
         String(summary.pairs),
+        String(summary.scoredTargets),
+        String(summary.runtimeExcludedTargets),
         formatWeight(summary.totalWeight),
-        formatStageRatio(summary.greenTargets, summary.pairs),
-        formatStageRatio(summary.firstPassGreenTargets, summary.pairs),
+        formatStageRatio(summary.greenTargets, summary.scoredTargets),
+        formatStageRatio(summary.firstPassGreenTargets, summary.scoredTargets),
         formatAttempts(summary.averageAttemptsUsed),
         formatDurationMs(summary.averageTimeToGreenMs),
-        formatStageRatio(summary.buildPassed, summary.pairs),
+        formatStageRatio(summary.buildPassed, summary.scoredTargets),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
         formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
@@ -797,7 +805,7 @@ function printAggregateSection(title: string, aggregates: Array<{ key: string; e
 
 function printFailureSection(entries: SweepEntry[]): void {
   const failureMap = new Map<string, Set<string>>();
-  for (const entry of entries) {
+  for (const entry of entries.filter((candidate) => candidate.benchmarkEligible)) {
     for (const failureClass of entry.failureClasses) {
       const bucket = failureMap.get(failureClass) ?? new Set<string>();
       bucket.add(`${entry.taskId}/${entry.track}`);
@@ -830,6 +838,8 @@ function printModelAggregateSection(reports: SweepReport[]): void {
     formatAggregateRow([
       "group",
       "pairs",
+      "scored",
+      "excluded",
       "weight",
       "green",
       "first",
@@ -848,12 +858,14 @@ function printModelAggregateSection(reports: SweepReport[]): void {
       formatAggregateRow([
         modelId,
         String(summary.pairs),
+        String(summary.scoredTargets),
+        String(summary.runtimeExcludedTargets),
         formatWeight(summary.totalWeight),
-        formatStageRatio(summary.greenTargets, summary.pairs),
-        formatStageRatio(summary.firstPassGreenTargets, summary.pairs),
+        formatStageRatio(summary.greenTargets, summary.scoredTargets),
+        formatStageRatio(summary.firstPassGreenTargets, summary.scoredTargets),
         formatAttempts(summary.averageAttemptsUsed),
         formatDurationMs(summary.averageTimeToGreenMs),
-        formatStageRatio(summary.buildPassed, summary.pairs),
+        formatStageRatio(summary.buildPassed, summary.scoredTargets),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
         formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
@@ -866,6 +878,8 @@ function printModelAggregateSection(reports: SweepReport[]): void {
 function summarizeEntries(entries: SweepEntry[]): {
   pairs: number;
   totalWeight: number;
+  scoredTargets: number;
+  runtimeExcludedTargets: number;
   greenTargets: number;
   firstPassGreenTargets: number;
   averageAttemptsUsed: number;
@@ -879,31 +893,43 @@ function summarizeEntries(entries: SweepEntry[]): {
   adversarialTotal: number;
   averageScore: number;
 } {
+  const scoredEntries = entries.filter((entry) => entry.benchmarkEligible);
   const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
-  const totalScore = entries.reduce((sum, entry) => sum + entry.score * entry.weight, 0);
-  const greenEntries = entries.filter((entry) => entry.reachedGreen);
+  const totalScore = scoredEntries.reduce((sum, entry) => sum + entry.score * entry.weight, 0);
+  const greenEntries = scoredEntries.filter((entry) => entry.reachedGreen);
   const greenWeight = greenEntries.reduce((sum, entry) => sum + entry.weight, 0);
-  const attemptsWeighted = entries.reduce((sum, entry) => sum + entry.attemptCount * entry.weight, 0);
+  const attemptsWeighted = scoredEntries.reduce((sum, entry) => sum + entry.attemptCount * entry.weight, 0);
   const timeToGreenWeighted = greenEntries.reduce(
     (sum, entry) => sum + (entry.timeToGreenMs ?? 0) * entry.weight,
     0,
   );
+  const scoredWeight = scoredEntries.reduce((sum, entry) => sum + entry.weight, 0);
   return {
     pairs: entries.length,
     totalWeight,
+    scoredTargets: scoredEntries.length,
+    runtimeExcludedTargets: entries.length - scoredEntries.length,
     greenTargets: greenEntries.length,
-    firstPassGreenTargets: entries.filter((entry) => entry.firstPassGreen).length,
-    averageAttemptsUsed: totalWeight === 0 ? 0 : attemptsWeighted / totalWeight,
+    firstPassGreenTargets: scoredEntries.filter((entry) => entry.firstPassGreen).length,
+    averageAttemptsUsed: scoredWeight === 0 ? 0 : attemptsWeighted / scoredWeight,
     averageTimeToGreenMs: greenWeight === 0 ? undefined : timeToGreenWeighted / greenWeight,
-    buildPassed: entries.filter((entry) => entry.buildSuccess).length,
-    publicPassed: entries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
-    publicTotal: entries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
-    hiddenPassed: entries.reduce((sum, entry) => sum + entry.tests.hidden.passed, 0),
-    hiddenTotal: entries.reduce((sum, entry) => sum + entry.tests.hidden.total, 0),
-    adversarialPassed: entries.reduce((sum, entry) => sum + entry.tests.adversarial.passed, 0),
-    adversarialTotal: entries.reduce((sum, entry) => sum + entry.tests.adversarial.total, 0),
-    averageScore: totalWeight === 0 ? 0 : totalScore / totalWeight,
+    buildPassed: scoredEntries.filter((entry) => entry.buildSuccess).length,
+    publicPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
+    publicTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
+    hiddenPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.hidden.passed, 0),
+    hiddenTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.hidden.total, 0),
+    adversarialPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.adversarial.passed, 0),
+    adversarialTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.adversarial.total, 0),
+    averageScore: scoredWeight === 0 ? 0 : totalScore / scoredWeight,
   };
+}
+
+function formatScoringDisposition(entry: Pick<SweepEntry, "benchmarkEligible" | "errorStage">): string {
+  if (entry.benchmarkEligible) {
+    return "scored";
+  }
+
+  return `excluded:${entry.errorStage ?? "runtime"}`;
 }
 
 function printHelp(): void {

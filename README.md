@@ -205,6 +205,8 @@ Cross-task sweeps are no longer averaged equally by default. The benchmark now u
 
 That means a model can no longer offset weak performance on the hardest tasks just by cleaning up easier pairs.
 
+For pure model benchmarking, runtime/provider failures at the `model_invoke` stage are excluded from the capability score instead of being counted as zero-scored task failures. The sweep report shows those separately as `excluded:model_invoke` so you can distinguish adapter/runtime issues from actual coding failures.
+
 ## Workflow Metrics
 
 For personal model selection, the benchmark can now run multiple attempts per task and report:
