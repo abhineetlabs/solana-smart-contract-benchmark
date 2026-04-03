@@ -20,8 +20,8 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, migration-state safety, and multi-program CPI claim flows
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
-- practical personal workflow suites: `daily_v1`, `hard_v1`, `nightmare_v1`, and `personal_ranking_v1`
-- private task and private suite scaffolding under `tasks-private/` and `configs/suites/private/`
+- practical personal workflow suites: `daily_v1`, `hard_v1`, `nightmare_v1`, `personal_ranking_v1`, and `leaderboard_v1`
+- private task and private suite scaffolding under `tasks-private/` and `configs/suites/private/` for unpublished holdouts and internal frontier leaderboards
 - mock baselines plus Claude Code, Codex CLI, Gemini CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, compare, suite commands, and multi-attempt time-to-green runs
@@ -94,6 +94,17 @@ Recommended pure-capability commands:
 ./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark compare --suite personal_ranking_v1
 ```
+
+For a single public cross-model leaderboard score, prefer:
+
+```bash
+./benchmark run-all --model claude-code/sonnet --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex/default --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model gemini/default --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark compare --suite leaderboard_v1
+```
+
+For top-end frontier ranking, keep a private suite under `configs/suites/private/` that mixes the public matrix with multiple unpublished holdouts from `tasks-private/`. This gives you a shared public scorecard plus a harder internal leaderboard that is less likely to saturate.
 
 ## Localnet Wallet Fixtures
 
@@ -722,14 +733,17 @@ That makes the benchmark much closer to an actual coding workflow where you care
 
 ## Personal Suites
 
-The repo now ships with four practical suite tiers:
+The repo now ships with five practical suite tiers:
 
 - `daily_v1`: smaller, common smart-contract work for quick model checks
 - `hard_v1`: realistic harder custody, accounting, and multisig tasks
 - `nightmare_v1`: ugly repair, CPI, and migration tasks
 - `personal_ranking_v1`: a workflow-weighted blend intended for picking your default daily model
+- `leaderboard_v1`: a broad public leaderboard slice that includes every current target pair but weights native, repair, migration, and CPI-heavy work more strongly
 
 `personal_ranking_v1` uses workflow-aware weight rules, so repair, migration, and native tasks count more heavily than easy public generation tasks.
+
+`leaderboard_v1` is the best current single-suite default when you want one cross-model comparison table spanning lightweight fast models and frontier reasoning models.
 
 ## Private Holdouts
 

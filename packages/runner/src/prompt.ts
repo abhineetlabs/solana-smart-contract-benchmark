@@ -39,18 +39,20 @@ export async function renderPrompt(input: PromptRenderInput): Promise<string> {
     promptSections.push(tree.map((relativePath) => `- ${relativePath}`).join("\n"));
   }
 
-  promptSections.push("## Editable File Contents");
-  for (const editableFile of track.config.editableFiles) {
-    const absolutePath = path.join(track.starterDir, editableFile);
-    if (!(await pathExists(absolutePath))) {
-      continue;
-    }
+  if (task.spec.promptAssets.includeEditableFileContents) {
+    promptSections.push("## Editable File Contents");
+    for (const editableFile of track.config.editableFiles) {
+      const absolutePath = path.join(track.starterDir, editableFile);
+      if (!(await pathExists(absolutePath))) {
+        continue;
+      }
 
-    const content = await readTextFile(absolutePath);
-    promptSections.push(`### ${editableFile}`);
-    promptSections.push("```text");
-    promptSections.push(content.trimEnd());
-    promptSections.push("```");
+      const content = await readTextFile(absolutePath);
+      promptSections.push(`### ${editableFile}`);
+      promptSections.push("```text");
+      promptSections.push(content.trimEnd());
+      promptSections.push("```");
+    }
   }
 
   if (task.spec.promptAssets.includePublicTests && (await pathExists(track.publicTestsDir))) {

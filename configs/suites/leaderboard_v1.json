@@ -1,0 +1,18 @@
+{
+  "id": "leaderboard_v1",
+  "title": "Cross-Model Leaderboard Suite v1",
+  "description": "Broad comparison suite for ranking smart-contract coding models from lightweight non-thinking assistants through frontier reasoning models. Includes every current public target pair, but weights native Solana, repair, migration, and CPI-heavy tasks more strongly so top-end models do not separate only on easy generate tasks.",
+  "tags": ["leaderboard", "ranking", "broad"],
+  "targets": [
+    { "taskId": "counter_authority", "track": "anchor", "weight": 0.5 },
+    { "taskId": "counter_authority", "track": "native", "weight": 0.75 },
+    { "taskId": "escrow_basic", "track": "anchor", "weight": 1.25 },
+    { "taskId": "escrow_basic", "track": "native", "weight": 1.75 },
+    { "taskId": "vault_basic", "track": "anchor", "weight": 1.25 },
+    { "taskId": "vault_basic", "track": "native", "weight": 2.25 },
+    { "taskId": "multisig_treasury", "track": "anchor", "weight": 2.0 },
+    { "taskId": "staking_pool_rewards", "track": "anchor", "weight": 2.5 },
+    { "taskId": "vault_receipt_migration", "track": "anchor", "weight": 2.75 },
+    { "taskId": "vesting_router_cpi", "track": "anchor", "weight": 2.5 }
+  ]
+}
