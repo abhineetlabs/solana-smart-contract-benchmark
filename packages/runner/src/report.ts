@@ -19,6 +19,7 @@ export interface BenchmarkTarget {
   category: string;
   difficulty: Difficulty;
   title: string;
+  weight: number;
 }
 
 export interface SweepEntry {
@@ -27,6 +28,7 @@ export interface SweepEntry {
   category: string;
   difficulty: Difficulty;
   title: string;
+  weight: number;
   runId: string;
   attemptId: string;
   status: AttemptResult["status"];
@@ -40,6 +42,7 @@ export interface SweepEntry {
 
 export interface SweepSummary {
   totalTargets: number;
+  totalWeight: number;
   completedTargets: number;
   failedTargets: number;
   buildPassedTargets: number;
@@ -103,6 +106,7 @@ export async function listBenchmarkTargets(args: {
         category: task.spec.category,
         difficulty: task.spec.difficulty,
         title: task.spec.title,
+        weight: normalizeTargetWeight(target.weight ?? defaultDifficultyWeight(task.spec.difficulty)),
       };
     });
   }
@@ -133,6 +137,7 @@ export async function listBenchmarkTargets(args: {
         category: task.spec.category,
         difficulty: task.spec.difficulty,
         title: task.spec.title,
+        weight: defaultDifficultyWeight(task.spec.difficulty),
       });
     }
   }
@@ -216,7 +221,10 @@ export async function loadSweepReports(args: LoadSweepReportsArgs): Promise<Swee
 
   const reports: SweepReport[] = [];
   for (const fileName of selectedFiles) {
-    const report = await readJsonFile<SweepReport>(path.join(sweepsDir, fileName));
+    const report = await normalizeSweepReport(
+      args.rootDir,
+      await readJsonFile<SweepReport>(path.join(sweepsDir, fileName)),
+    );
     if (args.modelId && report.modelId !== args.modelId) {
       continue;
     }
@@ -242,6 +250,7 @@ function toSweepEntry(
     category: target.category,
     difficulty: target.difficulty,
     title: target.title,
+    weight: target.weight,
     runId: result.runId,
     attemptId: result.attemptId,
     status: result.status,
@@ -257,14 +266,19 @@ function toSweepEntry(
 function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
   const completedTargets = entries.filter((entry) => entry.status === "completed").length;
   const buildPassedTargets = entries.filter((entry) => entry.buildSuccess).length;
-  const totalScore = entries.reduce((sum, entry) => sum + entry.score, 0);
+  const totalWeight = entries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0);
+  const totalScore = entries.reduce(
+    (sum, entry) => sum + entry.score * normalizeTargetWeight(entry.weight),
+    0,
+  );
 
   return {
     totalTargets: entries.length,
+    totalWeight: roundWeight(totalWeight),
     completedTargets,
     failedTargets: entries.length - completedTargets,
     buildPassedTargets,
-    averageScore: entries.length === 0 ? 0 : totalScore / entries.length,
+    averageScore: totalWeight === 0 ? 0 : roundScore(totalScore / totalWeight),
   };
 }
 
@@ -276,4 +290,62 @@ async function persistSweepReport(rootDir: string, report: SweepReport): Promise
 
 function createSweepId(): string {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}`;
+}
+
+async function normalizeSweepReport(rootDir: string, report: SweepReport): Promise<SweepReport> {
+  const suiteWeightMap = report.suiteId
+    ? await loadSuiteWeightMap(rootDir, report.suiteId).catch(() => undefined)
+    : undefined;
+  const entries = report.entries.map((entry) => ({
+    ...entry,
+    weight: normalizeTargetWeight(
+      entry.weight ??
+        suiteWeightMap?.get(`${entry.taskId}/${entry.track}`) ??
+        defaultDifficultyWeight(entry.difficulty),
+    ),
+  }));
+
+  return {
+    ...report,
+    entries,
+    summary: computeSweepSummary(entries),
+  };
+}
+
+async function loadSuiteWeightMap(rootDir: string, suiteId: string): Promise<Map<string, number>> {
+  const suite = await loadBenchmarkSuite(rootDir, suiteId);
+  const weights = new Map<string, number>();
+
+  for (const target of suite.targets) {
+    if (target.weight !== undefined) {
+      weights.set(`${target.taskId}/${target.track}`, normalizeTargetWeight(target.weight));
+    }
+  }
+
+  return weights;
+}
+
+function defaultDifficultyWeight(difficulty: Difficulty): number {
+  switch (difficulty) {
+    case "easy":
+      return 1;
+    case "medium":
+      return 2;
+    case "hard":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+function normalizeTargetWeight(weight: number): number {
+  return roundWeight(weight);
+}
+
+function roundScore(value: number): number {
+  return Number(value.toFixed(4));
+}
+
+function roundWeight(value: number): number {
+  return Number(value.toFixed(2));
 }

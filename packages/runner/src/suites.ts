@@ -6,6 +6,7 @@ import { pathExists, readJsonFile } from "../../shared/src/index.js";
 export interface BenchmarkSuiteTarget {
   taskId: string;
   track: "anchor" | "native" | "pinocchio";
+  weight?: number;
 }
 
 export interface BenchmarkSuite {
@@ -45,6 +46,14 @@ export async function loadBenchmarkSuite(rootDir: string, suiteId: string): Prom
   const suite = await readJsonFile<BenchmarkSuite>(suitePath);
   if (!suite.id || !suite.title || !Array.isArray(suite.targets) || suite.targets.length === 0) {
     throw new Error(`Benchmark suite "${suiteId}" is invalid.`);
+  }
+
+  for (const target of suite.targets) {
+    if (target.weight !== undefined && (!Number.isFinite(target.weight) || target.weight <= 0)) {
+      throw new Error(
+        `Benchmark suite "${suiteId}" contains an invalid weight for "${target.taskId}/${target.track}".`,
+      );
+    }
   }
 
   return suite;

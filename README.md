@@ -16,7 +16,7 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
   - `vesting_router_cpi` on `anchor`
 - a more demanding task mix focused on PDA custody, per-user accounting, threshold-controlled treasury execution, repair-style reward-accounting bugs, migration-state safety, and multi-program CPI claim flows
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
-- mock baselines plus Claude Code, Codex CLI, and OpenCode adapters
+- mock baselines plus Claude Code, Codex CLI, Gemini CLI, and OpenCode adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, compare, and suite commands
 
@@ -49,6 +49,7 @@ npm install --ignore-scripts
 ./benchmark run --model mock/starter --track anchor --task vesting_router_cpi
 ./benchmark run --model claude-code/sonnet --track anchor --task counter_authority
 ./benchmark run --model codex/default --track anchor --task counter_authority
+./benchmark run --model gemini/default --track anchor --task counter_authority
 ./benchmark run --model opencode/default --track anchor --task counter_authority
 ./benchmark run-all --model claude-code/sonnet --suite ranking_v1
 ./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
@@ -71,6 +72,7 @@ Built-in model ids currently listed by the CLI:
 - `codex/default`
 - `codex-oss/ollama/default`
 - `codex-oss/lmstudio/default`
+- `gemini/default`
 - `opencode/default`
 
 The Codex adapter also accepts explicit model patterns even when they are not listed verbatim:
@@ -85,6 +87,18 @@ Examples:
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model codex/gpt-5 --track anchor --task vesting_router_cpi
 ./benchmark run --model codex-oss/ollama/qwen2.5-coder:32b --track anchor --task escrow_basic
+```
+
+The Gemini adapter accepts:
+
+- `gemini/default`
+- `gemini/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model gemini/default --track anchor --task counter_authority
+./benchmark run --model gemini/gemini-2.5-pro --track anchor --task vesting_router_cpi
 ```
 
 The OpenCode adapter accepts:
@@ -144,6 +158,31 @@ Run benchmark integrity checks over a full scope instead of one task:
 ./benchmark self-check --difficulty hard --track native
 ```
 
+## Scoring
+
+The benchmark now has two scoring layers:
+
+- per-task attempt scoring
+- cross-task sweep aggregation
+
+Per-task attempt scores are still computed internally on a normalized `0.0` to `1.0` scale from the task spec's stage weights:
+
+- build
+- public tests
+- hidden tests
+- adversarial tests
+- efficiency, currently unused
+
+The CLI now displays those same values on a friendlier `0` to `100` scale. So a stored attempt score of `0.3833` will be shown as `38.33/100`.
+
+Cross-task sweeps are no longer averaged equally by default. The benchmark now uses weighted averages:
+
+- default matrix runs use difficulty weights: `easy=1`, `medium=2`, `hard=3`
+- named suites can override this with explicit per-target weights
+- `ranking_v1` now assigns higher weights to the more discriminative repair, migration, CPI, and native targets
+
+That means a model can no longer offset weak performance on the hardest tasks just by cleaning up easier pairs.
+
 ## What It Measures
 
 - task completion behavior
@@ -164,5 +203,6 @@ Run benchmark integrity checks over a full scope instead of one task:
 - only three native tasks are implemented so far, and both `escrow_basic/native` and `vault_basic/native` currently validate pre-created custody token accounts instead of creating them inside the program
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
+- Gemini runs depend on a local authenticated `gemini` CLI session, and offline benchmark invocations will fail if Gemini uses any tools during the run
 - OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal
 - ranking-suite runs should stay sequential; overlapping Anchor/localnet-backed sweeps can interfere with each other

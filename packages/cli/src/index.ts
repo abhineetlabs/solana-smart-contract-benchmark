@@ -160,7 +160,7 @@ async function handleRun(args: string[]): Promise<void> {
   });
 
   console.log(`Run complete: ${execution.result.attemptId}`);
-  console.log(`Score: ${execution.result.score.total}`);
+  console.log(`Score: ${formatScore(execution.result.score.total)}/100`);
   console.log(`Build: ${execution.result.build.success ? "pass" : "fail"}`);
   console.log(
     `Public tests: ${execution.result.tests.public.passed}/${execution.result.tests.public.total}`,
@@ -217,7 +217,7 @@ async function handleBaseline(args: string[]): Promise<void> {
 
   console.log(`Baseline complete: ${baselineType}`);
   console.log(`Run: ${execution.result.attemptId}`);
-  console.log(`Score: ${execution.result.score.total}`);
+  console.log(`Score: ${formatScore(execution.result.score.total)}/100`);
   console.log(
     `Tests: public ${execution.result.tests.public.passed}/${execution.result.tests.public.total}, hidden ${execution.result.tests.hidden.passed}/${execution.result.tests.hidden.total}, adversarial ${execution.result.tests.adversarial.passed}/${execution.result.tests.adversarial.total}`,
   );
@@ -289,7 +289,7 @@ async function handleRunAll(args: string[]): Promise<void> {
       printSweepReport(report);
     } else {
       console.log(
-        `Repeat ${index + 1}/${repeats}: ${report.sweepId} average ${formatScore(report.summary.averageScore)} build ${formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets)} failed ${report.summary.failedTargets}`,
+        `Repeat ${index + 1}/${repeats}: ${report.sweepId} weighted average ${formatScore(report.summary.averageScore)}/100 build ${formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets)} failed ${report.summary.failedTargets}`,
       );
     }
   }
@@ -400,7 +400,7 @@ async function handleSelfCheck(args: string[]): Promise<void> {
       }
 
       console.log(
-        `${target.taskId}/${target.track}: reference ${formatScore(reference.result.score.total)}, insecure adversarial ${formatStageRatio(insecure.result.tests.adversarial.passed, insecure.result.tests.adversarial.total)}`,
+        `${target.taskId}/${target.track}: reference ${formatScore(reference.result.score.total)}/100, insecure adversarial ${formatStageRatio(insecure.result.tests.adversarial.passed, insecure.result.tests.adversarial.total)}`,
       );
     }
 
@@ -462,7 +462,7 @@ async function handleSelfCheck(args: string[]): Promise<void> {
   }
 
   console.log(`Self-check task: ${taskId}`);
-  console.log(`Reference score: ${reference.result.score.total}`);
+  console.log(`Reference score: ${formatScore(reference.result.score.total)}/100`);
   console.log(`Insecure adversarial: ${insecure.result.tests.adversarial.passed}/${insecure.result.tests.adversarial.total}`);
   console.log(`Invalid-json status: ${invalid.result.status}`);
 
@@ -570,7 +570,7 @@ function printSweepReport(report: SweepReport): void {
   }
   console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
   console.log(
-    `Summary: pairs ${report.summary.totalTargets}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, build ${report.summary.buildPassedTargets}/${report.summary.totalTargets}, average ${formatScore(report.summary.averageScore)}`,
+    `Summary: pairs ${report.summary.totalTargets}, weight ${formatWeight(report.summary.totalWeight)}, completed ${report.summary.completedTargets}, failed ${report.summary.failedTargets}, build ${report.summary.buildPassedTargets}/${report.summary.totalTargets}, weighted average ${formatScore(report.summary.averageScore)}/100`,
   );
   console.log("Pairs:");
   console.log(
@@ -578,9 +578,10 @@ function printSweepReport(report: SweepReport): void {
       "task",
       "category",
       "difficulty",
+      "weight",
       "track",
       "status",
-      "score",
+      "score/100",
       "build",
       "public",
       "hidden",
@@ -594,6 +595,7 @@ function printSweepReport(report: SweepReport): void {
         entry.taskId,
         entry.category,
         entry.difficulty,
+        formatWeight(entry.weight),
         entry.track,
         entry.status,
         formatScore(entry.score),
@@ -614,7 +616,7 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "suite", "pairs", "completed", "failed", "build", "average"]),
+    formatOverviewRow(["sweep", "model", "suite", "pairs", "weight", "completed", "failed", "build", "avg/100"]),
   );
   for (const report of reports) {
     console.log(
@@ -623,6 +625,7 @@ function printSweepOverview(reports: SweepReport[]): void {
         report.modelId,
         report.suiteId ?? "-",
         String(report.summary.totalTargets),
+        formatWeight(report.summary.totalWeight),
         String(report.summary.completedTargets),
         String(report.summary.failedTargets),
         formatStageRatio(report.summary.buildPassedTargets, report.summary.totalTargets),
@@ -633,17 +636,17 @@ function printSweepOverview(reports: SweepReport[]): void {
 }
 
 function formatReportRow(values: string[]): string {
-  const widths = [22, 14, 10, 10, 10, 8, 8, 10, 10, 13, 24];
+  const widths = [22, 14, 10, 8, 10, 10, 10, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 12, 8, 10, 8, 8, 8];
+  const widths = [32, 20, 12, 8, 8, 10, 8, 8, 8];
   return formatRow(values, widths);
 }
 
 function formatAggregateRow(values: string[]): string {
-  const widths = [18, 8, 8, 10, 10, 13, 8];
+  const widths = [18, 8, 8, 8, 10, 10, 13, 10];
   return formatRow(values, widths);
 }
 
@@ -672,7 +675,11 @@ function formatStageSummary(buildSuccess: boolean, passed: number, total: number
 }
 
 function formatScore(value: number): string {
-  return value.toFixed(4);
+  return (value * 100).toFixed(2);
+}
+
+function formatWeight(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => string): Array<{ key: string; entries: SweepEntry[] }> {
@@ -694,13 +701,14 @@ function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => s
 
 function printAggregateSection(title: string, aggregates: Array<{ key: string; entries: SweepEntry[] }>): void {
   console.log(title + ":");
-  console.log(formatAggregateRow(["group", "pairs", "build", "public", "hidden", "adversarial", "avg"]));
+  console.log(formatAggregateRow(["group", "pairs", "weight", "build", "public", "hidden", "adversarial", "avg/100"]));
   for (const aggregate of aggregates) {
     const summary = summarizeEntries(aggregate.entries);
     console.log(
       formatAggregateRow([
         aggregate.key,
         String(summary.pairs),
+        formatWeight(summary.totalWeight),
         formatStageRatio(summary.buildPassed, summary.pairs),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
@@ -742,13 +750,14 @@ function printModelAggregateSection(reports: SweepReport[]): void {
   }
 
   console.log("Model aggregates:");
-  console.log(formatAggregateRow(["group", "pairs", "build", "public", "hidden", "adversarial", "avg"]));
+  console.log(formatAggregateRow(["group", "pairs", "weight", "build", "public", "hidden", "adversarial", "avg/100"]));
   for (const [modelId, entries] of [...byModel.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
     const summary = summarizeEntries(entries);
     console.log(
       formatAggregateRow([
         modelId,
         String(summary.pairs),
+        formatWeight(summary.totalWeight),
         formatStageRatio(summary.buildPassed, summary.pairs),
         formatStageRatio(summary.publicPassed, summary.publicTotal),
         formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
@@ -761,6 +770,7 @@ function printModelAggregateSection(reports: SweepReport[]): void {
 
 function summarizeEntries(entries: SweepEntry[]): {
   pairs: number;
+  totalWeight: number;
   buildPassed: number;
   publicPassed: number;
   publicTotal: number;
@@ -770,9 +780,11 @@ function summarizeEntries(entries: SweepEntry[]): {
   adversarialTotal: number;
   averageScore: number;
 } {
-  const totalScore = entries.reduce((sum, entry) => sum + entry.score, 0);
+  const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+  const totalScore = entries.reduce((sum, entry) => sum + entry.score * entry.weight, 0);
   return {
     pairs: entries.length,
+    totalWeight,
     buildPassed: entries.filter((entry) => entry.buildSuccess).length,
     publicPassed: entries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
     publicTotal: entries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
@@ -780,7 +792,7 @@ function summarizeEntries(entries: SweepEntry[]): {
     hiddenTotal: entries.reduce((sum, entry) => sum + entry.tests.hidden.total, 0),
     adversarialPassed: entries.reduce((sum, entry) => sum + entry.tests.adversarial.passed, 0),
     adversarialTotal: entries.reduce((sum, entry) => sum + entry.tests.adversarial.total, 0),
-    averageScore: entries.length === 0 ? 0 : totalScore / entries.length,
+    averageScore: totalWeight === 0 ? 0 : totalScore / totalWeight,
   };
 }
 

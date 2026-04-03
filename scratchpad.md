@@ -16,6 +16,7 @@
 - Current completed goal: `vault_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
 - Current completed goal: `escrow_basic` now also runs on a real `native` track with public, hidden, and adversarial suites.
 - Current completed goal: the benchmark now supports direct Codex CLI execution, including Codex-authenticated runs and OSS-through-Codex model routes.
+- Current completed goal: the benchmark now supports direct Gemini CLI execution through a headless JSON adapter.
 - Current completed goal: the benchmark now supports OpenCode CLI execution through a default route and explicit provider/model routes.
 - Current completed goal: the benchmark now supports frozen suite definitions, repeated sweeps, richer compare breakdowns, and aggregate self-checks across multi-target slices.
 - Current completed goal: the benchmark now includes a migration-style hard task, `vault_receipt_migration`, and it is promoted into the frozen `ranking_v1` suite.
@@ -34,12 +35,15 @@
 - Skip runtime-only directories and socket files when copying workspaces into temp runs or persisted artifacts.
 - Use the local `claude` CLI in print mode with tools disabled and structured JSON output so Claude Code subscription plans can be benchmarked without an Anthropic API key.
 - Use the local `codex` CLI in `exec` mode with JSON event output and a stricter file-entry schema so Codex subscription runs and Codex-managed OSS local-provider runs can be benchmarked through the same file-map contract.
+- Use the local `gemini` CLI in headless JSON mode and reject any run that uses Gemini tools during offline benchmark execution.
 - Use the local `opencode` CLI in `run --format json` mode and enforce the benchmark file-map contract through adapter-side output instructions plus JSON parsing.
 - Run Claude Code benchmark invocations from a temporary clean directory to avoid accidental project-context leakage from the benchmark repo itself.
 - Run Codex benchmark invocations from a temporary clean directory and map Codex's file-entry list output back into the benchmark's file-map JSON shape.
+- Run Gemini benchmark invocations from a temporary clean directory and parse the CLI's top-level `response` plus aggregated token stats from JSON mode.
 - Run OpenCode benchmark invocations from a temporary clean directory and forward `opencode/<provider>/<model>` suffixes directly to the OpenCode `--model provider/model` format.
 - Keep benchmark suite runs sequential; overlapping Anchor/localnet-backed sweeps can interfere with validators and contaminate results.
 - Freeze the first official comparison slice as `configs/suites/ranking_v1.json` instead of tying ranking claims to the ever-growing full task matrix.
+- Keep attempt scores normalized internally, but present human-facing CLI scores on a `0` to `100` scale and weight cross-task sweep averages by difficulty or explicit suite weights.
 - Discover public tests from `starter/tests-public` so prompt rendering and validation point at the same visible public suite that benchmark runs execute.
 - Use unique escrow seeds per Rust test context so Anchor suites can run concurrently without PDA collisions.
 - Use a host-side `solana-program-test` native track for `counter_authority` so the benchmark covers both Anchor and non-Anchor authoring patterns.
@@ -57,6 +61,7 @@
   - `anchor-cli 0.32.1`
   - `solana-cli 3.1.11`
   - `codex-cli 0.114.0`
+  - `gemini-cli 0.29.7`
   - `opencode 1.3.13`
 - Local OSS providers currently absent:
   - `ollama` not found
@@ -100,6 +105,12 @@
   - explicit `codex/<model>` and `codex-oss/<provider>/<model>` ids are also accepted
   - benchmark runs use `codex exec` with JSON event output, schema-validated file-entry responses, and a temp clean invocation directory
   - no OpenAI API key is required if the local Codex CLI session is already authenticated
+- Gemini CLI adapter implemented:
+  - available listed model ids include `gemini/default`
+  - explicit `gemini/<model>` ids are also accepted
+  - benchmark runs use `gemini -p ... --output-format json` with adapter-side output guards for the benchmark file-map JSON contract
+  - offline benchmark runs fail closed if Gemini uses any tools during execution
+  - no separate API key is required if the local Gemini CLI session is already authenticated
 - OpenCode adapter implemented:
   - available listed model ids include `opencode/default`
   - explicit `opencode/<provider>/<model>` ids are also accepted for OpenCode-routed providers, including local/open-weight providers if your OpenCode setup exposes them
@@ -116,6 +127,12 @@
 - Sweep runner improvements implemented:
   - `./benchmark run-all --repeats <n>` repeats the same target slice multiple times and prints an overview plus model aggregate summary
   - sweep reports now persist `suiteId` and task `category`
+- Scoring/reporting improvements implemented:
+  - CLI score display now uses a human-facing `0` to `100` scale instead of raw normalized decimals
+  - attempt-level scoring remains normalized internally from each task's stage weights
+  - cross-task sweep averages now use weighted aggregation instead of equal averaging
+  - default weights are difficulty-based: `easy=1`, `medium=2`, `hard=3`
+  - `ranking_v1` now overrides those defaults with explicit per-target weights so harder repair, migration, CPI, and native targets matter more
 - Compare/reporting improvements implemented:
   - `./benchmark compare --suite <suite>` filters to a frozen suite
   - single-report output now includes category aggregates, track aggregates, and failure-hotspot summaries
@@ -139,6 +156,7 @@
   - `./benchmark run --model mock/invalid-json --track anchor --task counter_authority`
   - `./benchmark run --model claude-code/sonnet --track anchor --task counter_authority`
   - `./benchmark run --model codex/default --track anchor --task counter_authority`
+  - `./benchmark run --model gemini/default --track anchor --task counter_authority`
   - `./benchmark self-check`
 - OpenCode verification notes:
   - `opencode run --format json 'Reply with exactly the JSON object {"answer":"ok"} and nothing else.'` succeeds outside the Codex sandbox and returns JSON events with text plus token usage
@@ -173,6 +191,17 @@
   - hidden tests passed `3/3`
   - adversarial tests passed `3/3`
   - total score `1.0`
+- Latest verified Gemini run result:
+  - model `gemini/default`
+  - build passed
+  - public tests passed `3/3`
+  - hidden tests passed `3/3`
+  - adversarial tests passed `3/3`
+  - total score `1.0`
+- Latest verified Gemini CLI smoke result:
+  - command `gemini -p 'Reply with exactly {"files":{"answer.txt":"ok"}}' --output-format json`
+  - returned the expected top-level `response`
+  - reported `tools.totalCalls = 0`
 - Latest verified clean frozen-suite reference sweep:
   - command `./benchmark run-all --model mock/reference --suite ranking_v1`
   - sweep id `2026-04-02T17-52-51-094Z_d00ddc70`
