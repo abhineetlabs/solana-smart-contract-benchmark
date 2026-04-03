@@ -584,9 +584,16 @@ async function handleCompare(args: string[]): Promise<void> {
 function printSweepReport(report: SweepReport): void {
   console.log(`Sweep: ${report.sweepId}`);
   console.log(`Model: ${report.modelId}`);
+  console.log(`Provider: ${report.modelProvider}`);
   console.log(`Mode: ${report.mode}`);
   if (report.suiteId) {
-    console.log(`Suite: ${report.suiteId}`);
+    console.log(
+      `Suite: ${report.suiteId}${report.selection.suiteTitle ? ` (${report.selection.suiteTitle})` : ""}`,
+    );
+  }
+  const filters = formatSelectionFilters(report);
+  if (filters !== "-") {
+    console.log(`Filters: ${filters}`);
   }
   console.log(`Max attempts: ${report.maxAttempts}`);
   console.log(`Warm-cache: ${report.warmed ? "yes" : "no"}`);
@@ -637,7 +644,8 @@ function printSweepReport(report: SweepReport): void {
   printAggregateSection("By category", aggregateEntries(report.entries, (entry) => entry.category));
   printAggregateSection("By track", aggregateEntries(report.entries, (entry) => entry.track));
   printFailureSection(report.entries);
-  console.log(`Report: results/sweeps/${report.sweepId}.json`);
+  console.log(`Report JSON: ${report.artifacts.jsonReportPath}`);
+  console.log(`Report Summary: ${report.artifacts.markdownSummaryPath}`);
 }
 
 function printSweepOverview(reports: SweepReport[]): void {
@@ -665,6 +673,16 @@ function printSweepOverview(reports: SweepReport[]): void {
 function formatReportRow(values: string[]): string {
   const widths = [22, 14, 10, 8, 10, 10, 10, 7, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
+}
+
+function formatSelectionFilters(report: SweepReport): string {
+  const filters = [
+    report.selection.track ? `track=${report.selection.track}` : undefined,
+    report.selection.taskId ? `task=${report.selection.taskId}` : undefined,
+    report.selection.difficulty ? `difficulty=${report.selection.difficulty}` : undefined,
+  ].filter((value): value is string => value !== undefined);
+
+  return filters.length > 0 ? filters.join(", ") : "-";
 }
 
 function formatOverviewRow(values: string[]): string {

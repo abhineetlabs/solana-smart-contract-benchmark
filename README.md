@@ -168,6 +168,11 @@ Inspect the latest saved sweep report:
 ./benchmark compare --suite ranking_v1
 ```
 
+Each sweep now writes two report artifacts under `results/sweeps/`:
+
+- `<sweep-id>.json`: machine-readable report with model id, provider, suite/filters, scoring, and per-pair details
+- `<sweep-id>.md`: human-readable summary with metadata, headline metrics, pair tables, aggregates, and failure hotspots
+
 Run benchmark integrity checks over a full scope instead of one task:
 
 ```bash
