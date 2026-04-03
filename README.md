@@ -210,75 +210,353 @@ Each sweep now writes two report artifacts under `results/sweeps/`:
 
 ## CLI Reference
 
+This section is intentionally verbose. The goal is that you should be able to understand every command and every important flag without having to infer behavior from examples.
+
 ### `benchmark validate`
 
-Validates all discovered public and private tasks.
+Validates every discovered public task and private task.
+
+Use it when:
+
+- you added or changed task files
+- you pulled new benchmark changes
+- you want to make sure the repo is internally consistent before spending money on model runs
+
+Command:
+
+```bash
+./benchmark validate
+```
 
 ### `benchmark list tasks`
 
-Shows every available task with difficulty and supported tracks.
+Shows every task id, its difficulty, and supported tracks.
+
+Command:
+
+```bash
+./benchmark list tasks
+```
 
 ### `benchmark list models`
 
-Shows the built-in model ids exposed by the installed adapters.
+Shows the built-in model ids currently exposed by the installed adapters.
+
+Command:
+
+```bash
+./benchmark list models
+```
 
 ### `benchmark list suites`
 
-Shows the named suite ids that can be passed to `run-all` and `compare`.
+Shows the named suites you can pass to `run-all` and `compare`.
 
-### `benchmark warm-cache --track <track> --task <task>`
+Command:
 
-Pre-builds task dependencies so the first real run is less cold.
+```bash
+./benchmark list suites
+```
 
-Flags:
+### `benchmark warm-cache`
 
-- `--track <track>`: the task track to warm, such as `anchor` or `native`
-- `--task <task>`: the task id to warm
+Pre-builds dependencies for one task/track pair so the first real benchmark run is less cold and less surprising.
 
-### `benchmark run --model <id> --track <track> --task <task> [flags]`
+Command shape:
 
-Runs a single task/track pair.
+```bash
+./benchmark warm-cache --track <track> --task <task>
+```
 
-Flags:
+#### `--track <track>`
 
-- `--model <id>`: model adapter id, such as `claude-code/sonnet` or `codex/default`
-- `--track <track>`: `anchor`, `native`, or another supported track
-- `--task <task>`: task id
-- `--mode offline|retrieval`: invocation mode; retrieval is reserved for future local-docs support
-- `--max-attempts <n>`: benchmark repair attempts after a usable model output exists
-- `--strict-capability`: retry transport-stage `model_invoke` failures before excluding them from capability scoring
-- `--runtime-retries <n>`: extra `model_invoke` retries to allow when `--strict-capability` is on
-- live progress is printed automatically during model invoke, build, and test stages
+Selects which implementation track to warm.
+
+Typical values:
+
+- `anchor`
+- `native`
+
+#### `--task <task>`
+
+Selects which task id to warm.
+
+Example:
+
+```bash
+./benchmark warm-cache --track anchor --task counter_authority
+```
+
+### `benchmark run`
+
+Runs one task/track pair and writes one run manifest plus one attempt result directory.
+
+Use it when:
+
+- you want to inspect one specific task closely
+- you are debugging one model on one benchmark target
+- you want to test a new adapter/model without paying for a full sweep
+
+Command shape:
+
+```bash
+./benchmark run --model <id> --track <track> --task <task> [flags]
+```
+
+#### `--model <id>`
+
+Chooses the adapter/model id to run.
+
+Examples:
+
+- `claude-code/sonnet`
+- `codex/default`
+- `gemini/default`
+- `opencode/opencode/glm-5`
+
+#### `--track <track>`
+
+Chooses the implementation track for the task.
+
+Typical values:
+
+- `anchor`
+- `native`
+
+#### `--task <task>`
+
+Chooses the benchmark task id.
+
+Examples:
+
+- `counter_authority`
+- `escrow_basic`
+- `staking_pool_rewards`
+
+#### `--mode offline|retrieval`
+
+Chooses the invocation mode.
+
+Current practical guidance:
+
+- use `offline`
+- retrieval is reserved for future pinned-docs evaluation
+
+#### `--max-attempts <n>`
+
+Controls benchmark repair attempts after the model has already produced a valid usable output.
+
+What it means:
+
+- `1` means one shot only
+- `2` or higher allows the model to receive benchmark feedback and try again
+
+What it does **not** mean:
+
+- it does not control provider/runtime retries
+- it does not retry `model_invoke` transport failures
+
+#### `--strict-capability`
+
+Turns on capability-focused execution.
+
+What it does:
+
+- retries `model_invoke` failures before giving up
+- excludes persistent `model_invoke` failures from the capability score instead of treating them as model zeros
+
+Use it when:
+
+- you care about model ability, not provider flakiness
+- you want cleaner cross-model comparisons
+
+#### `--runtime-retries <n>`
+
+Controls extra retries for `model_invoke` failures when `--strict-capability` is on.
+
+What it means:
+
+- `0` means no extra transport retries
+- `1` means one extra provider retry after the first invoke failure
+- `4` is a good higher-confidence value for expensive comparison runs
+
+Important:
+
+- this is separate from `--max-attempts`
+- runtime retries happen before a valid response exists
+
+#### Live Progress During `run`
+
+`run` now prints progress automatically while it is working.
+
+You will see lines for:
+
+- attempt start
+- invoke start and finish
+- build start and finish
+- public/hidden/adversarial test start and finish
 
 Examples:
 
 ```bash
-./benchmark run --model claude-code/sonnet --track anchor --task counter_authority --strict-capability
-./benchmark run --model codex/default --track anchor --task staking_pool_rewards --max-attempts 3 --strict-capability
+./benchmark run --model claude-code/sonnet --track anchor --task counter_authority --strict-capability --runtime-retries 2
+./benchmark run --model codex/default --track anchor --task staking_pool_rewards --max-attempts 3 --strict-capability --runtime-retries 2
 ```
 
-### `benchmark run-all --model <id> [flags]`
+### `benchmark run-all`
 
-Runs a sweep across either:
+Runs a sweep and produces a final aggregate report.
 
-- the full supported matrix
-- a named suite
-- a filtered subset by task/track/difficulty
+Use it when:
 
-Flags:
+- you want a real benchmark score
+- you want a suite-level comparison between models
+- you want one final report instead of many single-task runs
 
-- `--model <id>`: required model id
-- `--suite <suite>`: run a named suite such as `personal_ranking_v1`
-- `--track <track>`: limit to one track when not using `--suite`
-- `--task <task>`: limit to one task when not using `--suite`
-- `--difficulty easy|medium|hard`: limit by task difficulty when not using `--suite`
-- `--mode offline|retrieval`: invocation mode
-- `--repeats <n>`: repeat the same sweep multiple times
-- `--max-attempts <n>`: repair attempts per target after a usable response exists
-- `--strict-capability`: retry `model_invoke` failures before excluding them from capability scoring
-- `--runtime-retries <n>`: extra `model_invoke` retries allowed in strict-capability mode
-- `--require-full-sweep`: fail the command if any target is still runtime-excluded
-- `--warm-cache`: pre-warm each target before running it
+Command shape:
+
+```bash
+./benchmark run-all --model <id> [flags]
+```
+
+It can operate in three modes:
+
+- full matrix mode: no suite/task/track filter
+- suite mode: `--suite <suite>`
+- filtered mode: `--track`, `--task`, and/or `--difficulty`
+
+`run-all` is sequential, not parallel. That is deliberate, because overlapping Solana/Anchor-backed runs can interfere with one another.
+
+#### `--model <id>`
+
+Chooses the model id for the whole sweep.
+
+This flag is required.
+
+#### `--suite <suite>`
+
+Runs a named curated suite instead of the whole evolving matrix.
+
+Examples:
+
+- `daily_v1`
+- `hard_v1`
+- `nightmare_v1`
+- `personal_ranking_v1`
+- `ranking_v1`
+
+Use this when you want stable comparisons.
+
+#### `--track <track>`
+
+Filters the sweep to one track when you are **not** using `--suite`.
+
+Example:
+
+```bash
+./benchmark run-all --model codex/default --track native
+```
+
+#### `--task <task>`
+
+Filters the sweep to one task when you are **not** using `--suite`.
+
+This is useful when you want a sweep-style report for a single target.
+
+#### `--difficulty easy|medium|hard`
+
+Filters the sweep by task difficulty when you are **not** using `--suite`.
+
+Example:
+
+```bash
+./benchmark run-all --model claude-code/sonnet --difficulty hard
+```
+
+#### `--mode offline|retrieval`
+
+Chooses invocation mode for the sweep.
+
+Current practical guidance:
+
+- use `offline`
+- retrieval is future-facing
+
+#### `--repeats <n>`
+
+Repeats the entire same sweep multiple times.
+
+Use it when:
+
+- you want to measure stability
+- you want multiple sweep ids for later comparison
+
+Example:
+
+```bash
+./benchmark run-all --model gemini/default --suite ranking_v1 --repeats 3
+```
+
+#### `--max-attempts <n>`
+
+Controls repair attempts per target after a valid model response exists.
+
+This is the sweep-wide version of the same flag in `run`.
+
+#### `--strict-capability`
+
+Turns on capability-focused scoring for the whole sweep.
+
+What it does:
+
+- retries `model_invoke` failures using `--runtime-retries`
+- excludes persistent `model_invoke` failures from the capability score
+
+#### `--runtime-retries <n>`
+
+Controls extra provider/runtime retries for each target when `--strict-capability` is enabled.
+
+Practical recommendation:
+
+- use `4` for expensive serious comparison runs
+
+#### `--require-full-sweep`
+
+This is the most important safety flag for expensive cross-model comparisons.
+
+What it does:
+
+- fails the entire command if any target is still runtime-excluded after retries
+- prevents you from comparing a partial sweep for one model against a complete sweep for another model
+
+Use it when:
+
+- the run is expensive
+- you care about comparability
+- you want the command to fail loudly instead of quietly producing a partial report
+
+#### `--warm-cache`
+
+Runs warm-cache behavior for each target before benchmarking it.
+
+Use it when:
+
+- you want to reduce cold-start surprises
+- you are doing a fresh first run on a machine
+
+#### Live Progress During `run-all`
+
+`run-all` now prints progress automatically while it is working.
+
+You will see lines for:
+
+- target start
+- warm-cache start and finish
+- attempt start
+- model invoke start and finish
+- build start and finish
+- public/hidden/adversarial test start and finish
+- target finish
 
 Examples:
 
@@ -288,32 +566,91 @@ Examples:
 ./benchmark run-all --model gemini/default --suite ranking_v1 --repeats 3 --strict-capability --runtime-retries 4 --require-full-sweep
 ```
 
-### `benchmark baseline <reference|insecure> --track <track> --task <task>`
+### `benchmark baseline`
 
-Runs the built-in reference or insecure baseline on one target.
+Runs a built-in benchmark baseline on one task/track pair.
 
-### `benchmark compare [<sweep-id> ...] [flags]`
+Command shape:
 
-Reads saved sweep reports and prints the comparison summary.
+```bash
+./benchmark baseline <reference|insecure> --track <track> --task <task>
+```
 
-Flags:
+#### `reference`
 
-- `--latest <n>`: load the latest `n` sweeps when explicit ids are not given
-- `--model <id>`: filter saved sweeps to one model id
-- `--suite <suite>`: filter saved sweeps to one suite id
+Uses the benchmark’s known-good reference solution.
 
-### `benchmark self-check [flags]`
+Use it when:
 
-Runs benchmark integrity checks using reference, insecure, and invalid-json baselines.
+- you want to confirm the target is healthy
+- you want a known `100/100` control
 
-Flags:
+#### `insecure`
 
-- `--suite <suite>`: self-check a named suite
-- `--track <track>`: self-check one track or a difficulty slice
-- `--task <task>`: self-check one specific task
-- `--difficulty <level>`: self-check a filtered slice without naming a suite
+Uses the benchmark’s intentionally insecure solution.
 
-Run benchmark integrity checks over a full scope instead of one task:
+Use it when:
+
+- you want to confirm hidden/adversarial tests are catching the intended weakness
+
+### `benchmark compare`
+
+Reads saved sweep reports and prints comparison summaries.
+
+Command shape:
+
+```bash
+./benchmark compare [<sweep-id> ...] [flags]
+```
+
+#### `--latest <n>`
+
+Loads the latest `n` sweep reports when you do not pass explicit sweep ids.
+
+#### `--model <id>`
+
+Filters saved sweep reports to one model id.
+
+#### `--suite <suite>`
+
+Filters saved sweep reports to one suite id.
+
+Examples:
+
+```bash
+./benchmark compare
+./benchmark compare --latest 2
+./benchmark compare --model claude-code/sonnet
+./benchmark compare --suite personal_ranking_v1
+```
+
+### `benchmark self-check`
+
+Runs benchmark integrity checks using the built-in baselines.
+
+Command shape:
+
+```bash
+./benchmark self-check [flags]
+```
+
+#### `--suite <suite>`
+
+Runs self-check across every target in the named suite.
+
+#### `--track <track>`
+
+Filters self-check to one track or a difficulty slice.
+
+#### `--task <task>`
+
+Runs self-check on one exact target.
+
+#### `--difficulty <level>`
+
+Filters self-check by difficulty without using a named suite.
+
+Examples:
 
 ```bash
 ./benchmark self-check --suite ranking_v1

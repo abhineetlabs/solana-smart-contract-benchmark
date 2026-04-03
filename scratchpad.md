@@ -25,6 +25,7 @@
 - Current completed goal: capability scoring now excludes `model_invoke` runtime/provider failures so the benchmark score reflects model outcomes rather than transport reliability.
 - Current completed goal: strict-capability mode now retries `model_invoke` failures before exclusion, so pure model sweeps can be run with less provider noise.
 - Current completed goal: sweeps can now fail fast with `--require-full-sweep`, and benchmark runs now print live stage progress instead of leaving the terminal blank.
+- Current completed goal: the README now has command-by-command and flag-by-flag reference sections so users can understand the CLI without inferring behavior from dense examples.
 - Current next goal: expand private holdout coverage and calibrate the personal suite weights against the models actually used in daily smart-contract work.
 
 ## Decisions Made
@@ -53,6 +54,7 @@
 - Treat `model_invoke` failures as runtime exclusions, not benchmark zeros, because the benchmark should measure model capability rather than provider transport reliability.
 - Keep transport retries separate from benchmark repair attempts: `runtimeRetryLimit` handles provider/invoke noise, while `maxAttempts` handles model iteration after a valid response exists.
 - For expensive model-comparison runs, prefer `--strict-capability --runtime-retries <n> --require-full-sweep` so partial sweeps do not silently become benchmark outputs.
+- Prefer explicit per-flag documentation in the README over compressed flag lists; the benchmark now has enough modes that discoverability matters as much as correctness.
 - Discover both committed public tasks from `tasks/` and untracked private holdout tasks from `tasks-private/`.
 - Discover suites recursively under `configs/suites/`, but ignore `.example.json` scaffolds so private templates do not show up as runnable suites.
 - Support workflow-weighted suites through `weightRules`, so personal ranking slices can upweight repair, migration, native, or category-specific work without editing task-level scoring.
