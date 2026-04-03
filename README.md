@@ -56,11 +56,42 @@ npm install --ignore-scripts
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability
 ./benchmark run-all --model claude-code/sonnet --suite ranking_v1
 ./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
 ./benchmark compare
 ./benchmark compare --suite ranking_v1
 ./benchmark self-check --suite ranking_v1
+```
+
+## Recommended Usage
+
+If your goal is a pure model benchmark rather than a provider reliability benchmark:
+
+1. Prefer direct adapters when available:
+   - `claude-code/...`
+   - `codex/...`
+   - `gemini/...`
+2. Use `--strict-capability` on `run` or `run-all`.
+   - this retries `model_invoke` failures before giving up
+   - if the model still never returns usable output, that target is excluded from the capability score instead of being counted as a model zero
+3. Use `--runtime-retries <n>` if you want to change how many extra transport retries are allowed in strict-capability mode.
+4. Use `--max-attempts <n>` for actual repair-style benchmark attempts after a usable model response exists.
+
+Recommended pure-capability commands:
+
+```bash
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability
+./benchmark run-all --model codex/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability
+./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability
+./benchmark compare --suite personal_ranking_v1
+```
+
+For open-weight local models:
+
+```bash
+./benchmark run-all --model codex-oss/ollama/<model> --suite personal_ranking_v1 --strict-capability
+./benchmark run-all --model codex-oss/lmstudio/<model> --suite personal_ranking_v1 --strict-capability
 ```
 
 ## Model Adapters
@@ -173,6 +204,109 @@ Each sweep now writes two report artifacts under `results/sweeps/`:
 - `<sweep-id>.json`: machine-readable report with model id, provider, suite/filters, scoring, and per-pair details
 - `<sweep-id>.md`: human-readable summary with metadata, headline metrics, pair tables, aggregates, and failure hotspots
 
+## CLI Reference
+
+### `benchmark validate`
+
+Validates all discovered public and private tasks.
+
+### `benchmark list tasks`
+
+Shows every available task with difficulty and supported tracks.
+
+### `benchmark list models`
+
+Shows the built-in model ids exposed by the installed adapters.
+
+### `benchmark list suites`
+
+Shows the named suite ids that can be passed to `run-all` and `compare`.
+
+### `benchmark warm-cache --track <track> --task <task>`
+
+Pre-builds task dependencies so the first real run is less cold.
+
+Flags:
+
+- `--track <track>`: the task track to warm, such as `anchor` or `native`
+- `--task <task>`: the task id to warm
+
+### `benchmark run --model <id> --track <track> --task <task> [flags]`
+
+Runs a single task/track pair.
+
+Flags:
+
+- `--model <id>`: model adapter id, such as `claude-code/sonnet` or `codex/default`
+- `--track <track>`: `anchor`, `native`, or another supported track
+- `--task <task>`: task id
+- `--mode offline|retrieval`: invocation mode; retrieval is reserved for future local-docs support
+- `--max-attempts <n>`: benchmark repair attempts after a usable model output exists
+- `--strict-capability`: retry transport-stage `model_invoke` failures before excluding them from capability scoring
+- `--runtime-retries <n>`: extra `model_invoke` retries to allow when `--strict-capability` is on
+
+Examples:
+
+```bash
+./benchmark run --model claude-code/sonnet --track anchor --task counter_authority --strict-capability
+./benchmark run --model codex/default --track anchor --task staking_pool_rewards --max-attempts 3 --strict-capability
+```
+
+### `benchmark run-all --model <id> [flags]`
+
+Runs a sweep across either:
+
+- the full supported matrix
+- a named suite
+- a filtered subset by task/track/difficulty
+
+Flags:
+
+- `--model <id>`: required model id
+- `--suite <suite>`: run a named suite such as `personal_ranking_v1`
+- `--track <track>`: limit to one track when not using `--suite`
+- `--task <task>`: limit to one task when not using `--suite`
+- `--difficulty easy|medium|hard`: limit by task difficulty when not using `--suite`
+- `--mode offline|retrieval`: invocation mode
+- `--repeats <n>`: repeat the same sweep multiple times
+- `--max-attempts <n>`: repair attempts per target after a usable response exists
+- `--strict-capability`: retry `model_invoke` failures before excluding them from capability scoring
+- `--runtime-retries <n>`: extra `model_invoke` retries allowed in strict-capability mode
+- `--warm-cache`: pre-warm each target before running it
+
+Examples:
+
+```bash
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability
+./benchmark run-all --model codex/default --track native --difficulty hard --strict-capability
+./benchmark run-all --model gemini/default --suite ranking_v1 --repeats 3 --strict-capability
+```
+
+### `benchmark baseline <reference|insecure> --track <track> --task <task>`
+
+Runs the built-in reference or insecure baseline on one target.
+
+### `benchmark compare [<sweep-id> ...] [flags]`
+
+Reads saved sweep reports and prints the comparison summary.
+
+Flags:
+
+- `--latest <n>`: load the latest `n` sweeps when explicit ids are not given
+- `--model <id>`: filter saved sweeps to one model id
+- `--suite <suite>`: filter saved sweeps to one suite id
+
+### `benchmark self-check [flags]`
+
+Runs benchmark integrity checks using reference, insecure, and invalid-json baselines.
+
+Flags:
+
+- `--suite <suite>`: self-check a named suite
+- `--track <track>`: self-check one track or a difficulty slice
+- `--task <task>`: self-check one specific task
+- `--difficulty <level>`: self-check a filtered slice without naming a suite
+
 Run benchmark integrity checks over a full scope instead of one task:
 
 ```bash
@@ -206,6 +340,11 @@ Cross-task sweeps are no longer averaged equally by default. The benchmark now u
 That means a model can no longer offset weak performance on the hardest tasks just by cleaning up easier pairs.
 
 For pure model benchmarking, runtime/provider failures at the `model_invoke` stage are excluded from the capability score instead of being counted as zero-scored task failures. The sweep report shows those separately as `excluded:model_invoke` so you can distinguish adapter/runtime issues from actual coding failures.
+
+`--strict-capability` improves this further by retrying `model_invoke` failures a few times before exclusion. This is different from `--max-attempts`:
+
+- `--runtime-retries` handles transport/provider failures before a valid model response exists
+- `--max-attempts` handles repair-style benchmark attempts after a valid model response exists
 
 ## Workflow Metrics
 

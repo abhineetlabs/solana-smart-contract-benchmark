@@ -36,6 +36,8 @@ interface RunBenchmarkArgs {
   temperature?: number;
   maxOutputTokens?: number;
   maxAttempts?: number;
+  strictCapability?: boolean;
+  runtimeRetryLimit?: number;
   keepWorkspace?: boolean;
 }
 
@@ -119,6 +121,8 @@ export interface AttemptResult {
     estimatedCostUsd?: number;
     latencyMs: number;
   };
+  invocationAttempts: number;
+  runtimeRetriesUsed: number;
   failureClasses: string[];
   toolchain: Record<string, string | null>;
   error?: {
@@ -132,6 +136,10 @@ export interface BenchmarkRunSummary {
   attemptIds: string[];
   maxAttempts: number;
   attemptCount: number;
+  strictCapability: boolean;
+  runtimeRetryLimit: number;
+  runtimeRetriesUsed: number;
+  invocationCount: number;
   reachedGreen: boolean;
   firstPassGreen: boolean;
   greenAttemptNumber?: number;
@@ -149,6 +157,8 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
   const mode = args.mode ?? "offline";
   const temperature = args.temperature ?? 0;
   const maxAttempts = args.maxAttempts ?? 1;
+  const strictCapability = args.strictCapability ?? false;
+  const runtimeRetryLimit = strictCapability ? Math.max(args.runtimeRetryLimit ?? 2, 0) : 0;
   const task = await loadRequiredTask(args.rootDir, args.taskId);
   const interactionMode = args.interactionMode ?? task.spec.supportedModes[0] ?? "generate";
   const track = loadRequiredTrack(task, args.track);
@@ -172,6 +182,8 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
   let finalExecution: { result: AttemptResult; attemptDir: string } | undefined;
   let greenAttemptNumber: number | undefined;
   let timeToGreenMs: number | undefined;
+  let totalRuntimeRetriesUsed = 0;
+  let totalInvocationCount = 0;
 
   for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     const attemptNumber = attemptIndex + 1;
@@ -181,7 +193,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
       previousAttemptDir: previousAttempt?.attemptDir,
     });
 
-    const execution = await runSingleAttempt({
+    const execution = await runAttemptWithCapabilityRetries({
       rootDir: args.rootDir,
       runId,
       runDir,
@@ -195,11 +207,15 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
       maxOutputTokens: args.maxOutputTokens,
       attemptNumber,
       maxAttempts,
+      strictCapability,
+      runtimeRetryLimit,
       commandEnv,
       toolchain,
       keepWorkspace: args.keepWorkspace,
     });
     attemptIds.push(execution.result.attemptId);
+    totalRuntimeRetriesUsed += execution.result.runtimeRetriesUsed;
+    totalInvocationCount += execution.result.invocationAttempts;
     previousAttempt = execution;
     finalExecution = execution;
 
@@ -221,6 +237,10 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
     attemptIds,
     maxAttempts,
     attemptCount: attemptIds.length,
+    strictCapability,
+    runtimeRetryLimit,
+    runtimeRetriesUsed: totalRuntimeRetriesUsed,
+    invocationCount: totalInvocationCount,
     reachedGreen: greenAttemptNumber !== undefined,
     firstPassGreen: greenAttemptNumber === 1,
     greenAttemptNumber,
@@ -236,6 +256,8 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
     modelId: args.modelId,
     mode,
     interactionMode,
+    strictCapability,
+    runtimeRetryLimit,
     run,
     finalResult: result,
   });
@@ -260,12 +282,15 @@ async function runSingleAttempt(args: {
   temperature: number;
   maxOutputTokens?: number;
   attemptNumber: number;
+  invocationNumber: number;
   maxAttempts: number;
   commandEnv: Record<string, string>;
   toolchain: Record<string, string | null>;
   keepWorkspace?: boolean;
 }): Promise<{ result: AttemptResult; attemptDir: string }> {
-  const attemptId = `${args.task.id}_${args.track.track}_${args.mode}_attempt${args.attemptNumber}`;
+  const baseAttemptId = `${args.task.id}_${args.track.track}_${args.mode}_attempt${args.attemptNumber}`;
+  const attemptId =
+    args.invocationNumber === 1 ? baseAttemptId : `${baseAttemptId}_invoke${args.invocationNumber}`;
   const attemptDir = path.join(args.runDir, "attempts", attemptId);
   const artifactsDir = path.join(attemptDir, "artifacts");
   const logsDir = path.join(attemptDir, "logs");
@@ -402,6 +427,8 @@ async function runSingleAttempt(args: {
         ...modelResponse.usage,
         latencyMs: modelResponse.latencyMs,
       },
+      invocationAttempts: 1,
+      runtimeRetriesUsed: 0,
       failureClasses: inferFailureClasses({
         buildSuccess: buildResult.success,
         buildStderr: buildResult.stderr,
@@ -491,6 +518,8 @@ async function runSingleAttempt(args: {
         ...modelResponse?.usage,
         latencyMs: modelResponse?.latencyMs ?? 0,
       },
+      invocationAttempts: 1,
+      runtimeRetriesUsed: 0,
       failureClasses: classifyRunnerError(errorMessage),
       toolchain: args.toolchain,
       error: {
@@ -778,6 +807,8 @@ async function persistRunManifest(args: {
   modelId: string;
   mode: InvocationMode;
   interactionMode: InteractionMode;
+  strictCapability: boolean;
+  runtimeRetryLimit: number;
   run: BenchmarkRunSummary;
   finalResult: AttemptResult;
 }): Promise<void> {
@@ -789,8 +820,12 @@ async function persistRunManifest(args: {
     modelId: args.modelId,
     mode: args.mode,
     interactionMode: args.interactionMode,
+    strictCapability: args.strictCapability,
+    runtimeRetryLimit: args.runtimeRetryLimit,
     maxAttempts: args.run.maxAttempts,
     attemptCount: args.run.attemptCount,
+    invocationCount: args.run.invocationCount,
+    runtimeRetriesUsed: args.run.runtimeRetriesUsed,
     attempts: args.run.attemptIds,
     reachedGreen: args.run.reachedGreen,
     firstPassGreen: args.run.firstPassGreen,
@@ -801,6 +836,64 @@ async function persistRunManifest(args: {
     finalStatus: args.finalResult.status,
     finalScore: args.finalResult.score.total,
   });
+}
+
+async function runAttemptWithCapabilityRetries(args: {
+  rootDir: string;
+  runId: string;
+  runDir: string;
+  task: TaskDescriptor;
+  track: TaskTrackDescriptor;
+  modelId: string;
+  mode: InvocationMode;
+  interactionMode: InteractionMode;
+  prompt: string;
+  temperature: number;
+  maxOutputTokens?: number;
+  attemptNumber: number;
+  maxAttempts: number;
+  strictCapability: boolean;
+  runtimeRetryLimit: number;
+  commandEnv: Record<string, string>;
+  toolchain: Record<string, string | null>;
+  keepWorkspace?: boolean;
+}): Promise<{ result: AttemptResult; attemptDir: string }> {
+  let invocationNumber = 0;
+  let finalExecution: { result: AttemptResult; attemptDir: string } | undefined;
+
+  while (invocationNumber <= args.runtimeRetryLimit) {
+    invocationNumber += 1;
+
+    const execution = await runSingleAttempt({
+      ...args,
+      invocationNumber,
+    });
+    finalExecution = execution;
+
+    const shouldRetry =
+      args.strictCapability &&
+      execution.result.error?.stage === "model_invoke" &&
+      invocationNumber <= args.runtimeRetryLimit;
+
+    if (!shouldRetry) {
+      break;
+    }
+  }
+
+  if (!finalExecution) {
+    throw new Error("Capability retry loop finished without producing an attempt result.");
+  }
+
+  const invocationAttempts = invocationNumber;
+  const runtimeRetriesUsed = Math.max(invocationAttempts - 1, 0);
+  finalExecution.result.invocationAttempts = invocationAttempts;
+  finalExecution.result.runtimeRetriesUsed = runtimeRetriesUsed;
+  await persistAttemptArtifacts({
+    attemptDir: finalExecution.attemptDir,
+    result: finalExecution.result,
+  });
+
+  return finalExecution;
 }
 
 function toAttemptTestStage(

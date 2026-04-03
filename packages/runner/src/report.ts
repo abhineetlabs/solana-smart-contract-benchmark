@@ -48,6 +48,8 @@ export interface SweepEntry {
   failureClasses: string[];
   benchmarkEligible: boolean;
   scoringDisposition: "scored" | "excluded_runtime";
+  invocationAttempts: number;
+  runtimeRetriesUsed: number;
   resultPath: string;
   attemptDir: string;
   attemptCount: number;
@@ -96,6 +98,8 @@ export interface SweepReport {
   modelProvider: string;
   mode: InvocationMode;
   warmed: boolean;
+  strictCapability: boolean;
+  runtimeRetryLimit: number;
   suiteId?: string;
   selection: SweepSelection;
   maxAttempts: number;
@@ -108,6 +112,8 @@ interface RunBenchmarkSweepArgs {
   rootDir: string;
   modelId: string;
   mode?: InvocationMode;
+  strictCapability?: boolean;
+  runtimeRetryLimit?: number;
   suiteId?: string;
   track?: TrackId;
   taskId?: string;
@@ -207,6 +213,8 @@ export async function listBenchmarkTargets(args: {
 export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<SweepReport> {
   const mode = args.mode ?? "offline";
   const maxAttempts = args.maxAttempts ?? 1;
+  const strictCapability = args.strictCapability ?? false;
+  const runtimeRetryLimit = strictCapability ? Math.max(args.runtimeRetryLimit ?? 2, 0) : 0;
   const suite = args.suiteId ? await loadBenchmarkSuite(args.rootDir, args.suiteId) : undefined;
   const targets = await listBenchmarkTargets({
     rootDir: args.rootDir,
@@ -239,6 +247,8 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
       modelId: args.modelId,
       mode,
       maxAttempts,
+      strictCapability,
+      runtimeRetryLimit,
     });
 
     entries.push(toSweepEntry(target, args.rootDir, execution));
@@ -251,6 +261,8 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     modelProvider: inferModelProvider(args.modelId),
     mode,
     warmed: args.warmCache ?? false,
+    strictCapability,
+    runtimeRetryLimit,
     suiteId: args.suiteId,
     selection: {
       suiteId: args.suiteId,
@@ -326,6 +338,8 @@ function toSweepEntry(
     failureClasses: execution.result.failureClasses,
     benchmarkEligible: isBenchmarkEligible(execution.result),
     scoringDisposition: isBenchmarkEligible(execution.result) ? "scored" : "excluded_runtime",
+    invocationAttempts: execution.result.invocationAttempts,
+    runtimeRetriesUsed: execution.result.runtimeRetriesUsed,
     resultPath: path.relative(rootDir, path.join(execution.attemptDir, "result.json")),
     attemptDir: path.relative(rootDir, execution.attemptDir),
     attemptCount: execution.run.attemptCount,
@@ -383,6 +397,8 @@ async function persistSweepReport(rootDir: string, report: SweepReport): Promise
   const normalizedReport: SweepReport = {
     ...report,
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
+    strictCapability: report.strictCapability ?? false,
+    runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     artifacts: report.artifacts ?? buildSweepArtifacts(report.sweepId),
   };
 
@@ -437,6 +453,8 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
       benchmarkEligible,
       scoringDisposition:
         entry.scoringDisposition ?? (benchmarkEligible ? "scored" : "excluded_runtime"),
+      invocationAttempts: entry.invocationAttempts ?? 1,
+      runtimeRetriesUsed: entry.runtimeRetriesUsed ?? Math.max((entry.invocationAttempts ?? 1) - 1, 0),
       attemptCount,
       maxAttempts: entry.maxAttempts ?? attemptCount,
       reachedGreen,
@@ -450,6 +468,8 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
   return {
     ...report,
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
+    strictCapability: report.strictCapability ?? false,
+    runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     suiteId,
     selection: {
       suiteId,
@@ -609,6 +629,8 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     `- Provider: \`${report.modelProvider}\``,
     `- Mode: \`${report.mode}\``,
     `- Warm-cache: ${report.warmed ? "yes" : "no"}`,
+    `- Strict capability: ${report.strictCapability ? "yes" : "no"}`,
+    `- Runtime retry limit: ${report.runtimeRetryLimit}`,
     `- Max attempts: ${report.maxAttempts}`,
     report.selection.suiteId
       ? `- Suite: \`${report.selection.suiteId}\`${report.selection.suiteTitle ? ` (${report.selection.suiteTitle})` : ""}`
@@ -640,6 +662,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         "Track",
         "Status",
         "Scoring",
+        "Invokes",
         "Score/100",
         "Green",
         "Attempts",
@@ -658,6 +681,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         entry.track,
         entry.status,
         formatScoringDisposition(entry),
+        formatInvocationSummary(entry),
         formatScore100(entry.score),
         entry.reachedGreen ? "yes" : "no",
         `${entry.attemptCount}/${entry.maxAttempts}`,
@@ -948,4 +972,12 @@ function formatScoringDisposition(entry: Pick<SweepEntry, "benchmarkEligible" | 
   }
 
   return `excluded:${entry.errorStage ?? "runtime"}`;
+}
+
+function formatInvocationSummary(entry: Pick<SweepEntry, "invocationAttempts" | "runtimeRetriesUsed">): string {
+  if ((entry.runtimeRetriesUsed ?? 0) === 0) {
+    return String(entry.invocationAttempts ?? 1);
+  }
+
+  return `${entry.invocationAttempts} (${entry.runtimeRetriesUsed} retry)`;
 }

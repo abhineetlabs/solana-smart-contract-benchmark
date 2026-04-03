@@ -140,6 +140,12 @@ async function handleRun(args: string[]): Promise<void> {
       "max-attempts": {
         type: "string",
       },
+      "strict-capability": {
+        type: "boolean",
+      },
+      "runtime-retries": {
+        type: "string",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -150,6 +156,8 @@ async function handleRun(args: string[]): Promise<void> {
   const taskId = values.task;
   const mode = values.mode as "offline" | "retrieval" | undefined;
   const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
+  const strictCapability = values["strict-capability"] ?? false;
+  const runtimeRetryLimit = values["runtime-retries"] ? Number(values["runtime-retries"]) : 2;
 
   if (!modelId || !track || !taskId) {
     throw new Error("run requires --model, --track, and --task.");
@@ -159,6 +167,10 @@ async function handleRun(args: string[]): Promise<void> {
     throw new Error("run --max-attempts must be a positive integer.");
   }
 
+  if (values["runtime-retries"] && (!Number.isInteger(runtimeRetryLimit) || runtimeRetryLimit < 0)) {
+    throw new Error("run --runtime-retries must be a non-negative integer.");
+  }
+
   const execution = await runBenchmark({
     rootDir: process.cwd(),
     modelId,
@@ -166,13 +178,21 @@ async function handleRun(args: string[]): Promise<void> {
     taskId,
     mode,
     maxAttempts,
+    strictCapability,
+    runtimeRetryLimit,
   });
 
   console.log(`Run complete: ${execution.result.attemptId}`);
   console.log(`Score: ${formatScore(execution.result.score.total)}/100`);
   console.log(`Attempts: ${execution.run.attemptCount}/${execution.run.maxAttempts}`);
+  console.log(
+    `Strict capability: ${execution.run.strictCapability ? `yes (${execution.run.runtimeRetriesUsed} retries used, limit ${execution.run.runtimeRetryLimit})` : "no"}`,
+  );
   console.log(`Green: ${execution.run.reachedGreen ? `yes (attempt ${execution.run.greenAttemptNumber}, ${formatDurationMs(execution.run.timeToGreenMs)})` : "no"}`);
   console.log(`Build: ${execution.result.build.success ? "pass" : "fail"}`);
+  console.log(
+    `Model invokes: ${execution.result.invocationAttempts} (${execution.result.runtimeRetriesUsed} retries)`,
+  );
   console.log(
     `Public tests: ${execution.result.tests.public.passed}/${execution.result.tests.public.total}`,
   );
@@ -266,6 +286,12 @@ async function handleRunAll(args: string[]): Promise<void> {
       "max-attempts": {
         type: "string",
       },
+      "strict-capability": {
+        type: "boolean",
+      },
+      "runtime-retries": {
+        type: "string",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -282,12 +308,18 @@ async function handleRunAll(args: string[]): Promise<void> {
 
   const repeats = values.repeats ? Number(values.repeats) : 1;
   const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
+  const strictCapability = values["strict-capability"] ?? false;
+  const runtimeRetryLimit = values["runtime-retries"] ? Number(values["runtime-retries"]) : 2;
   if (!Number.isInteger(repeats) || repeats <= 0) {
     throw new Error("run-all --repeats must be a positive integer.");
   }
 
   if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
     throw new Error("run-all --max-attempts must be a positive integer.");
+  }
+
+  if (values["runtime-retries"] && (!Number.isInteger(runtimeRetryLimit) || runtimeRetryLimit < 0)) {
+    throw new Error("run-all --runtime-retries must be a non-negative integer.");
   }
 
   const reports: SweepReport[] = [];
@@ -302,6 +334,8 @@ async function handleRunAll(args: string[]): Promise<void> {
       taskId: values.task,
       warmCache: values["warm-cache"],
       maxAttempts,
+      strictCapability,
+      runtimeRetryLimit,
     });
     reports.push(report);
 
@@ -586,6 +620,9 @@ function printSweepReport(report: SweepReport): void {
   console.log(`Model: ${report.modelId}`);
   console.log(`Provider: ${report.modelProvider}`);
   console.log(`Mode: ${report.mode}`);
+  console.log(
+    `Strict capability: ${report.strictCapability ? `yes (runtime retries ${report.runtimeRetryLimit})` : "no"}`,
+  );
   if (report.suiteId) {
     console.log(
       `Suite: ${report.suiteId}${report.selection.suiteTitle ? ` (${report.selection.suiteTitle})` : ""}`,
@@ -610,6 +647,7 @@ function printSweepReport(report: SweepReport): void {
       "track",
       "status",
       "scoring",
+      "invokes",
       "score/100",
       "green",
       "attempts",
@@ -631,6 +669,7 @@ function printSweepReport(report: SweepReport): void {
         entry.track,
         entry.status,
         formatScoringDisposition(entry),
+        formatInvocationSummary(entry),
         formatScore(entry.score),
         entry.reachedGreen ? "yes" : "no",
         `${entry.attemptCount}/${entry.maxAttempts}`,
@@ -653,7 +692,7 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "suite", "pairs", "scored", "excluded", "green", "first", "attempts", "ttg", "avg/100"]),
+    formatOverviewRow(["sweep", "model", "suite", "strict", "pairs", "scored", "excluded", "green", "first", "attempts", "ttg", "avg/100"]),
   );
   for (const report of reports) {
     console.log(
@@ -661,6 +700,7 @@ function printSweepOverview(reports: SweepReport[]): void {
         report.sweepId,
         report.modelId,
         report.suiteId ?? "-",
+        report.strictCapability ? `yes/${report.runtimeRetryLimit}` : "no",
         String(report.summary.totalTargets),
         String(report.summary.scoredTargets),
         String(report.summary.runtimeExcludedTargets),
@@ -675,7 +715,7 @@ function printSweepOverview(reports: SweepReport[]): void {
 }
 
 function formatReportRow(values: string[]): string {
-  const widths = [22, 14, 10, 8, 10, 10, 20, 10, 7, 10, 8, 8, 10, 10, 13, 24];
+  const widths = [22, 14, 10, 8, 10, 10, 20, 10, 10, 7, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
 }
 
@@ -690,7 +730,7 @@ function formatSelectionFilters(report: SweepReport): string {
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 20, 6, 8, 9, 8, 8, 9, 8, 8];
+  const widths = [32, 20, 20, 8, 6, 8, 9, 8, 8, 9, 8, 8];
   return formatRow(values, widths);
 }
 
@@ -741,6 +781,14 @@ function formatDurationMs(value: number | undefined): string {
   }
 
   return `${(value / 1000).toFixed(1)}s`;
+}
+
+function formatInvocationSummary(entry: Pick<SweepEntry, "invocationAttempts" | "runtimeRetriesUsed">): string {
+  if (entry.runtimeRetriesUsed === 0) {
+    return String(entry.invocationAttempts);
+  }
+
+  return `${entry.invocationAttempts} (+${entry.runtimeRetriesUsed})`;
 }
 
 function aggregateEntries(entries: SweepEntry[], keyFn: (entry: SweepEntry) => string): Array<{ key: string; entries: SweepEntry[] }> {
@@ -938,8 +986,8 @@ function printHelp(): void {
   benchmark list tasks
   benchmark list models
   benchmark list suites
-  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--warm-cache]
+  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]

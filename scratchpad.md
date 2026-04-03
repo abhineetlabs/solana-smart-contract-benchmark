@@ -23,6 +23,7 @@
 - Current completed goal: the benchmark now supports personal workflow suites, private task/suite scaffolding, and multi-attempt time-to-green evaluation.
 - Current completed goal: saved sweep reports now emit both machine-readable JSON and human-readable Markdown summaries with model/provider metadata, run settings, aggregates, and failure hotspots.
 - Current completed goal: capability scoring now excludes `model_invoke` runtime/provider failures so the benchmark score reflects model outcomes rather than transport reliability.
+- Current completed goal: strict-capability mode now retries `model_invoke` failures before exclusion, so pure model sweeps can be run with less provider noise.
 - Current next goal: expand private holdout coverage and calibrate the personal suite weights against the models actually used in daily smart-contract work.
 
 ## Decisions Made
@@ -49,6 +50,7 @@
 - Keep attempt scores normalized internally, but present human-facing CLI scores on a `0` to `100` scale and weight cross-task sweep averages by difficulty or explicit suite weights.
 - Persist sweep reports as both JSON and Markdown so the saved artifact itself is enough to identify the model used, suite/filter scope, and headline outcomes later.
 - Treat `model_invoke` failures as runtime exclusions, not benchmark zeros, because the benchmark should measure model capability rather than provider transport reliability.
+- Keep transport retries separate from benchmark repair attempts: `runtimeRetryLimit` handles provider/invoke noise, while `maxAttempts` handles model iteration after a valid response exists.
 - Discover both committed public tasks from `tasks/` and untracked private holdout tasks from `tasks-private/`.
 - Discover suites recursively under `configs/suites/`, but ignore `.example.json` scaffolds so private templates do not show up as runnable suites.
 - Support workflow-weighted suites through `weightRules`, so personal ranking slices can upweight repair, migration, native, or category-specific work without editing task-level scoring.
@@ -167,6 +169,11 @@
   - sweep summaries now separate `scored` targets from `runtime-excluded` targets
   - `model_invoke` failures are excluded from capability averages and aggregate pass-rate math
   - pair rows now label runtime exclusions as `excluded:model_invoke`
+- Strict capability mode implemented:
+  - `run` and `run-all` now accept `--strict-capability`
+  - `--runtime-retries <n>` controls extra `model_invoke` retries in that mode
+  - transport retries do not consume `--max-attempts` repair loops
+  - run manifests and sweep reports now persist strict-capability metadata plus invocation counts
 - Compare/reporting improvements implemented:
   - `./benchmark compare --suite <suite>` filters to a frozen suite
   - single-report output now includes category aggregates, track aggregates, and failure-hotspot summaries
