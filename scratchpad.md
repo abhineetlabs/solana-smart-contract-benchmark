@@ -27,6 +27,7 @@
 - Current completed goal: sweeps can now fail fast with `--require-full-sweep`, and benchmark runs now print live stage progress instead of leaving the terminal blank.
 - Current completed goal: the README now has command-by-command and flag-by-flag reference sections so users can understand the CLI without inferring behavior from dense examples.
 - Current completed goal: the repo now has an explicit MIT license and README guidance that bundled `wallets/localnet.json` files are local test fixtures, not reusable secrets.
+- Current completed goal: the MIT license holder name now uses the full public owner name, `Abhineet Biju`.
 - Current next goal: expand private holdout coverage and calibrate the personal suite weights against the models actually used in daily smart-contract work.
 
 ## Decisions Made
