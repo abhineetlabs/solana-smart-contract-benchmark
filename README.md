@@ -2,6 +2,10 @@
 
 Local benchmark harness for evaluating LLM performance on Solana smart contract generation and repair tasks.
 
+## License
+
+This repository is released under the MIT license. See [LICENSE](LICENSE).
+
 ## Current Status
 
 The repository is being built from the implementation blueprint in `docs/IMPLEMENTATION_BLUEPRINT.md`. The current benchmark now includes:
@@ -90,6 +94,14 @@ Recommended pure-capability commands:
 ./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark compare --suite personal_ranking_v1
 ```
+
+## Localnet Wallet Fixtures
+
+Several Anchor starter workspaces include `wallets/localnet.json`.
+
+- These files are deterministic localnet test fixtures committed on purpose so the benchmark is reproducible.
+- They are not deploy credentials, not shared production wallets, and not secrets you should reuse elsewhere.
+- They are only intended for the local validator flows exercised by the benchmark tasks.
 
 For open-weight local models:
 

@@ -26,6 +26,7 @@
 - Current completed goal: strict-capability mode now retries `model_invoke` failures before exclusion, so pure model sweeps can be run with less provider noise.
 - Current completed goal: sweeps can now fail fast with `--require-full-sweep`, and benchmark runs now print live stage progress instead of leaving the terminal blank.
 - Current completed goal: the README now has command-by-command and flag-by-flag reference sections so users can understand the CLI without inferring behavior from dense examples.
+- Current completed goal: the repo now has an explicit MIT license and README guidance that bundled `wallets/localnet.json` files are local test fixtures, not reusable secrets.
 - Current next goal: expand private holdout coverage and calibrate the personal suite weights against the models actually used in daily smart-contract work.
 
 ## Decisions Made
@@ -38,6 +39,7 @@
 - Use real `anchor build` for the build stage and Anchor's `test --run <suite>` flow for public, hidden, and adversarial Rust suites.
 - Keep a shared benchmark-local Cargo cache via `BENCHMARK_CARGO_HOME` and a shared benchmark-local Cargo target directory via `BENCHMARK_CARGO_TARGET_DIR`.
 - Use a repo-local localnet wallet in the task starter so the benchmark does not depend on the developer's personal Solana wallet path.
+- Document bundled `wallets/localnet.json` files as deterministic localnet fixtures so open-source users do not confuse them with deployable credentials.
 - Skip runtime-only directories and socket files when copying workspaces into temp runs or persisted artifacts.
 - Use the local `claude` CLI in print mode with tools disabled and structured JSON output so Claude Code subscription plans can be benchmarked without an Anthropic API key.
 - Use the local `codex` CLI in `exec` mode with JSON event output and a stricter file-entry schema so Codex subscription runs and Codex-managed OSS local-provider runs can be benchmarked through the same file-map contract.
