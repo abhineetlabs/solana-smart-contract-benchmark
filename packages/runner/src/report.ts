@@ -28,6 +28,7 @@ export interface BenchmarkTarget {
   interactionMode: InteractionMode;
   title: string;
   weight: number;
+  taskSource: "public" | "holdout";
 }
 
 export interface SweepEntry {
@@ -38,6 +39,7 @@ export interface SweepEntry {
   interactionMode: InteractionMode;
   title: string;
   weight: number;
+  taskSource: "public" | "holdout";
   runId: string;
   attemptId: string;
   status: AttemptResult["status"];
@@ -61,6 +63,15 @@ export interface SweepEntry {
   totalDurationMs: number;
 }
 
+export interface SweepTaskSourceSummary {
+  totalTargets: number;
+  totalWeight: number;
+  scoredTargets: number;
+  scoredWeight: number;
+  runtimeExcludedTargets: number;
+  runtimeExcludedWeight: number;
+}
+
 export interface SweepSummary {
   totalTargets: number;
   totalWeight: number;
@@ -76,6 +87,10 @@ export interface SweepSummary {
   averageScore: number;
   averageAttemptsUsed: number;
   averageTimeToGreenMs?: number;
+  byTaskSource: {
+    public: SweepTaskSourceSummary;
+    holdout: SweepTaskSourceSummary;
+  };
 }
 
 export interface SweepSelection {
@@ -165,6 +180,7 @@ export async function listBenchmarkTargets(args: {
           difficulty: task.spec.difficulty,
           interactionMode,
         })),
+        taskSource: classifyTaskSource(args.rootDir, task.rootDir),
       };
     });
   }
@@ -197,6 +213,7 @@ export async function listBenchmarkTargets(args: {
         interactionMode: task.spec.supportedModes[0] ?? "generate",
         title: task.spec.title,
         weight: defaultDifficultyWeight(task.spec.difficulty),
+        taskSource: classifyTaskSource(args.rootDir, task.rootDir),
       });
     }
   }
@@ -339,6 +356,7 @@ function toSweepEntry(
     interactionMode: target.interactionMode,
     title: target.title,
     weight: target.weight,
+    taskSource: target.taskSource,
     runId: execution.result.runId,
     attemptId: execution.result.attemptId,
     status: execution.result.status,
@@ -401,6 +419,10 @@ function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
       (entry) => entry.timeToGreenMs,
       (entry) => entry.reachedGreen,
     ),
+    byTaskSource: {
+      public: computeTaskSourceSummary(entries, "public"),
+      holdout: computeTaskSourceSummary(entries, "holdout"),
+    },
   };
 }
 
@@ -435,6 +457,7 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
   const entries = await Promise.all(report.entries.map(async (entry) => {
     const task = taskMap.get(entry.taskId);
     const interactionMode = entry.interactionMode ?? task?.spec.supportedModes[0] ?? "generate";
+    const taskSource = entry.taskSource ?? classifyTaskSource(rootDir, task?.rootDir);
     const suiteTarget = suite?.targets.find(
       (target) => target.taskId === entry.taskId && target.track === entry.track,
     );
@@ -460,6 +483,7 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
       ...entry,
       interactionMode,
       weight: normalizeTargetWeight(weight),
+      taskSource,
       errorStage,
       benchmarkEligible,
       scoringDisposition:
@@ -516,6 +540,26 @@ function computeSuiteTargetWeight(
   const categoryWeight = suite.weightRules?.category?.[context.category] ?? 1;
 
   return base * difficultyWeight * interactionModeWeight * trackWeight * categoryWeight;
+}
+
+function computeTaskSourceSummary(
+  entries: SweepEntry[],
+  taskSource: "public" | "holdout",
+): SweepTaskSourceSummary {
+  const sourceEntries = entries.filter((entry) => entry.taskSource === taskSource);
+  const scoredEntries = sourceEntries.filter((entry) => entry.benchmarkEligible);
+  const runtimeExcludedEntries = sourceEntries.filter((entry) => !entry.benchmarkEligible);
+
+  return {
+    totalTargets: sourceEntries.length,
+    totalWeight: roundWeight(sourceEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0)),
+    scoredTargets: scoredEntries.length,
+    scoredWeight: roundWeight(scoredEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0)),
+    runtimeExcludedTargets: runtimeExcludedEntries.length,
+    runtimeExcludedWeight: roundWeight(
+      runtimeExcludedEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0),
+    ),
+  };
 }
 
 function defaultDifficultyWeight(difficulty: Difficulty): number {
@@ -628,6 +672,10 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
   const filters = formatSelectionFilters(report.selection);
   const categoryAggregates = aggregateSweepEntries(report.entries, (entry) => entry.category);
   const trackAggregates = aggregateSweepEntries(report.entries, (entry) => entry.track);
+  const taskSourceAggregates = ["public", "holdout"].map((taskSource) => ({
+    key: taskSource,
+    entries: report.entries.filter((entry) => entry.taskSource === taskSource),
+  }));
   const failureHotspots = collectFailureHotspots(report.entries);
 
   const lines = [
@@ -662,6 +710,8 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     `- First-pass green: ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.scoredTargets)}`,
     `- Average attempts used: ${formatAttempts(report.summary.averageAttemptsUsed)}`,
     `- Average time-to-green: ${formatDurationMs(report.summary.averageTimeToGreenMs)}`,
+    `- Public pairs: ${formatTaskSourceSummaryLine(report.summary.byTaskSource.public)}`,
+    `- Holdout pairs: ${formatTaskSourceSummaryLine(report.summary.byTaskSource.holdout)}`,
     "",
     "## Pairs",
     formatMarkdownTable(
@@ -671,6 +721,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         "Difficulty",
         "Weight",
         "Track",
+        "Source",
         "Status",
         "Scoring",
         "Invokes",
@@ -690,6 +741,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         entry.difficulty,
         formatWeight(entry.weight),
         entry.track,
+        entry.taskSource,
         entry.status,
         formatScoringDisposition(entry),
         formatInvocationSummary(entry),
@@ -707,6 +759,45 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         ),
         entry.failureClasses.join(", ") || "none",
       ]),
+    ),
+    "",
+    "## By Source",
+    formatMarkdownTable(
+      [
+        "Group",
+        "Pairs",
+        "Scored",
+        "Excluded",
+        "Weight",
+        "Green",
+        "First Pass",
+        "Avg Attempts",
+        "Avg TTG",
+        "Build",
+        "Public",
+        "Hidden",
+        "Adversarial",
+        "Avg/100",
+      ],
+      taskSourceAggregates.map(({ key, entries }) => {
+        const summary = summarizeSweepEntries(entries);
+        return [
+          key,
+          String(summary.pairs),
+          String(summary.scoredTargets),
+          String(summary.runtimeExcludedTargets),
+          formatWeight(summary.totalWeight),
+          formatStageRatio(summary.greenTargets, summary.scoredTargets),
+          formatStageRatio(summary.firstPassGreenTargets, summary.scoredTargets),
+          formatAttempts(summary.averageAttemptsUsed),
+          formatDurationMs(summary.averageTimeToGreenMs),
+          formatStageRatio(summary.buildPassed, summary.scoredTargets),
+          formatStageRatio(summary.publicPassed, summary.publicTotal),
+          formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
+          formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
+          formatScore100(summary.averageScore),
+        ];
+      }),
     ),
     "",
     "## By Category",
@@ -977,6 +1068,10 @@ function formatDurationMs(value: number | undefined): string {
   return `${(value / 1000).toFixed(1)}s`;
 }
 
+function formatTaskSourceSummaryLine(summary: SweepTaskSourceSummary): string {
+  return `${summary.totalTargets} total, ${summary.scoredTargets} scored, ${summary.runtimeExcludedTargets} excluded, weight ${formatWeight(summary.totalWeight)}`;
+}
+
 function formatScoringDisposition(entry: Pick<SweepEntry, "benchmarkEligible" | "errorStage">): string {
   if (entry.benchmarkEligible) {
     return "scored";
@@ -991,4 +1086,17 @@ function formatInvocationSummary(entry: Pick<SweepEntry, "invocationAttempts" | 
   }
 
   return `${entry.invocationAttempts} (${entry.runtimeRetriesUsed} retry)`;
+}
+
+function classifyTaskSource(rootDir: string, taskRootDir: string | undefined): "public" | "holdout" {
+  if (!taskRootDir) {
+    return "public";
+  }
+
+  const relativePath = path.relative(rootDir, taskRootDir).split(path.sep).join("/");
+  if (relativePath === "tasks-private" || relativePath.startsWith("tasks-private/")) {
+    return "holdout";
+  }
+
+  return "public";
 }

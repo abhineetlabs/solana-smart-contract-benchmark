@@ -651,6 +651,9 @@ function printSweepReport(report: SweepReport): void {
   console.log(
     `Summary: pairs ${report.summary.totalTargets}, scored ${report.summary.scoredTargets}, runtime-excluded ${report.summary.runtimeExcludedTargets}, scored weight ${formatWeight(report.summary.scoredWeight)}, green ${formatStageRatio(report.summary.greenTargets, report.summary.scoredTargets)}, first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.scoredTargets)}, avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}, avg ttg ${formatDurationMs(report.summary.averageTimeToGreenMs)}, capability score ${formatScore(report.summary.averageScore)}/100`,
   );
+  console.log(
+    `Task sources: public ${report.summary.byTaskSource.public.scoredTargets}/${report.summary.byTaskSource.public.totalTargets}, holdout ${report.summary.byTaskSource.holdout.scoredTargets}/${report.summary.byTaskSource.holdout.totalTargets}`,
+  );
   console.log("Pairs:");
   console.log(
     formatReportRow([
@@ -698,6 +701,7 @@ function printSweepReport(report: SweepReport): void {
   }
   printAggregateSection("By category", aggregateEntries(report.entries, (entry) => entry.category));
   printAggregateSection("By track", aggregateEntries(report.entries, (entry) => entry.track));
+  printAggregateSection("By source", aggregateEntries(report.entries, (entry) => entry.taskSource));
   printFailureSection(report.entries);
   console.log(`Report JSON: ${report.artifacts.jsonReportPath}`);
   console.log(`Report Summary: ${report.artifacts.markdownSummaryPath}`);
