@@ -114,6 +114,7 @@ interface RunBenchmarkSweepArgs {
   mode?: InvocationMode;
   strictCapability?: boolean;
   runtimeRetryLimit?: number;
+  onProgress?: (message: string) => void;
   suiteId?: string;
   track?: TrackId;
   taskId?: string;
@@ -231,13 +232,17 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
   const sweepId = createSweepId();
   const entries: SweepEntry[] = [];
 
-  for (const target of targets) {
+  for (const [targetIndex, target] of targets.entries()) {
+    const progressPrefix = `[${targetIndex + 1}/${targets.length}] ${target.taskId}/${target.track}`;
+    args.onProgress?.(`${progressPrefix}: target started`);
     if (args.warmCache) {
+      args.onProgress?.(`${progressPrefix}: warm-cache started`);
       await warmTaskCache({
         rootDir: args.rootDir,
         taskId: target.taskId,
         track: target.track,
       });
+      args.onProgress?.(`${progressPrefix}: warm-cache finished`);
     }
 
     const execution = await runBenchmark({
@@ -249,9 +254,15 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
       maxAttempts,
       strictCapability,
       runtimeRetryLimit,
+      onProgress: args.onProgress,
+      progressPrefix,
     });
 
-    entries.push(toSweepEntry(target, args.rootDir, execution));
+    const entry = toSweepEntry(target, args.rootDir, execution);
+    entries.push(entry);
+    args.onProgress?.(
+      `${progressPrefix}: target finished (${entry.scoringDisposition === "scored" ? `${formatScore100(entry.score)}/100` : `excluded:${entry.errorStage ?? "runtime"}`})`,
+    );
   }
 
   const report: SweepReport = {

@@ -180,6 +180,7 @@ async function handleRun(args: string[]): Promise<void> {
     maxAttempts,
     strictCapability,
     runtimeRetryLimit,
+    onProgress: (message) => console.log(`[progress] ${message}`),
   });
 
   console.log(`Run complete: ${execution.result.attemptId}`);
@@ -292,6 +293,9 @@ async function handleRunAll(args: string[]): Promise<void> {
       "runtime-retries": {
         type: "string",
       },
+      "require-full-sweep": {
+        type: "boolean",
+      },
     },
     strict: true,
     allowPositionals: true,
@@ -310,6 +314,7 @@ async function handleRunAll(args: string[]): Promise<void> {
   const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
   const strictCapability = values["strict-capability"] ?? false;
   const runtimeRetryLimit = values["runtime-retries"] ? Number(values["runtime-retries"]) : 2;
+  const requireFullSweep = values["require-full-sweep"] ?? false;
   if (!Number.isInteger(repeats) || repeats <= 0) {
     throw new Error("run-all --repeats must be a positive integer.");
   }
@@ -336,6 +341,7 @@ async function handleRunAll(args: string[]): Promise<void> {
       maxAttempts,
       strictCapability,
       runtimeRetryLimit,
+      onProgress: (message) => console.log(`[progress] ${message}`),
     });
     reports.push(report);
 
@@ -345,6 +351,14 @@ async function handleRunAll(args: string[]): Promise<void> {
       console.log(
         `Repeat ${index + 1}/${repeats}: ${report.sweepId} weighted average ${formatScore(report.summary.averageScore)}/100 green ${formatStageRatio(report.summary.greenTargets, report.summary.totalTargets)} first-pass ${formatStageRatio(report.summary.firstPassGreenTargets, report.summary.totalTargets)} avg attempts ${formatAttempts(report.summary.averageAttemptsUsed)}`,
       );
+    }
+
+    if (requireFullSweep && report.summary.runtimeExcludedTargets > 0) {
+      console.error(
+        `Incomplete sweep: ${report.summary.runtimeExcludedTargets} target(s) were excluded at runtime. Increase --runtime-retries or rerun before comparing models.`,
+      );
+      process.exitCode = 1;
+      return;
     }
   }
 
@@ -987,7 +1001,7 @@ function printHelp(): void {
   benchmark list models
   benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--warm-cache]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]

@@ -77,21 +77,25 @@ If your goal is a pure model benchmark rather than a provider reliability benchm
    - if the model still never returns usable output, that target is excluded from the capability score instead of being counted as a model zero
 3. Use `--runtime-retries <n>` if you want to change how many extra transport retries are allowed in strict-capability mode.
 4. Use `--max-attempts <n>` for actual repair-style benchmark attempts after a usable model response exists.
+5. Use `--require-full-sweep` on expensive comparison runs when you need exact model-to-model comparability.
+   - the command exits non-zero if any target is still runtime-excluded
+   - this prevents partial sweeps from being compared against complete ones
+6. `run` and `run-all` now print live stage progress so the terminal is not blank while a target is building or testing.
 
 Recommended pure-capability commands:
 
 ```bash
-./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability
-./benchmark run-all --model codex/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability
-./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark compare --suite personal_ranking_v1
 ```
 
 For open-weight local models:
 
 ```bash
-./benchmark run-all --model codex-oss/ollama/<model> --suite personal_ranking_v1 --strict-capability
-./benchmark run-all --model codex-oss/lmstudio/<model> --suite personal_ranking_v1 --strict-capability
+./benchmark run-all --model codex-oss/ollama/<model> --suite personal_ranking_v1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex-oss/lmstudio/<model> --suite personal_ranking_v1 --strict-capability --runtime-retries 4 --require-full-sweep
 ```
 
 ## Model Adapters
@@ -166,7 +170,7 @@ Run one of the workflow-oriented suites instead of the whole evolving task matri
 ./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite hard_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite nightmare_v1 --max-attempts 2
-./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark run-all --model claude-code/sonnet --suite ranking_v1
 ./benchmark run-all --model codex/default --suite ranking_v1
 ./benchmark compare --suite personal_ranking_v1
@@ -179,7 +183,7 @@ Optional filters:
 ./benchmark run-all --model claude-code/sonnet --track anchor
 ./benchmark run-all --model claude-code/sonnet --task escrow_basic
 ./benchmark run-all --model mock/reference --track native --difficulty hard --repeats 2
-./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 3
+./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 3 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark run-all --model claude-code/sonnet --warm-cache
 ```
 
@@ -244,6 +248,7 @@ Flags:
 - `--max-attempts <n>`: benchmark repair attempts after a usable model output exists
 - `--strict-capability`: retry transport-stage `model_invoke` failures before excluding them from capability scoring
 - `--runtime-retries <n>`: extra `model_invoke` retries to allow when `--strict-capability` is on
+- live progress is printed automatically during model invoke, build, and test stages
 
 Examples:
 
@@ -272,14 +277,15 @@ Flags:
 - `--max-attempts <n>`: repair attempts per target after a usable response exists
 - `--strict-capability`: retry `model_invoke` failures before excluding them from capability scoring
 - `--runtime-retries <n>`: extra `model_invoke` retries allowed in strict-capability mode
+- `--require-full-sweep`: fail the command if any target is still runtime-excluded
 - `--warm-cache`: pre-warm each target before running it
 
 Examples:
 
 ```bash
-./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability
-./benchmark run-all --model codex/default --track native --difficulty hard --strict-capability
-./benchmark run-all --model gemini/default --suite ranking_v1 --repeats 3 --strict-capability
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex/default --track native --difficulty hard --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model gemini/default --suite ranking_v1 --repeats 3 --strict-capability --runtime-retries 4 --require-full-sweep
 ```
 
 ### `benchmark baseline <reference|insecure> --track <track> --task <task>`
@@ -345,6 +351,7 @@ For pure model benchmarking, runtime/provider failures at the `model_invoke` sta
 
 - `--runtime-retries` handles transport/provider failures before a valid model response exists
 - `--max-attempts` handles repair-style benchmark attempts after a valid model response exists
+- `--require-full-sweep` makes the command fail if any target is still runtime-excluded after retries, which is the safest setting for expensive model-to-model comparisons
 
 ## Workflow Metrics
 

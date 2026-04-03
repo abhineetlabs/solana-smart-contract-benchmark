@@ -39,6 +39,8 @@ interface RunBenchmarkArgs {
   strictCapability?: boolean;
   runtimeRetryLimit?: number;
   keepWorkspace?: boolean;
+  onProgress?: (message: string) => void;
+  progressPrefix?: string;
 }
 
 interface ParsedModelOutput {
@@ -184,9 +186,13 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
   let timeToGreenMs: number | undefined;
   let totalRuntimeRetriesUsed = 0;
   let totalInvocationCount = 0;
+  const progressPrefix = args.progressPrefix ?? `${task.id}/${track.track}`;
 
   for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     const attemptNumber = attemptIndex + 1;
+    args.onProgress?.(
+      `${progressPrefix}: attempt ${attemptNumber}/${maxAttempts} started${strictCapability ? ` (strict-capability, runtime retries ${runtimeRetryLimit})` : ""}`,
+    );
     const prompt = await buildAttemptPrompt({
       basePrompt,
       previousResult: previousAttempt?.result,
@@ -212,6 +218,8 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
       commandEnv,
       toolchain,
       keepWorkspace: args.keepWorkspace,
+      onProgress: args.onProgress,
+      progressPrefix,
     });
     attemptIds.push(execution.result.attemptId);
     totalRuntimeRetriesUsed += execution.result.runtimeRetriesUsed;
@@ -222,8 +230,15 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
     if (isGreenAttempt(execution.result)) {
       greenAttemptNumber = attemptNumber;
       timeToGreenMs = Date.now() - runStartedAt;
+      args.onProgress?.(
+        `${progressPrefix}: attempt ${attemptNumber}/${maxAttempts} reached green in ${formatDurationMs(timeToGreenMs)}`,
+      );
       break;
     }
+
+    args.onProgress?.(
+      `${progressPrefix}: attempt ${attemptNumber}/${maxAttempts} finished with ${formatOutcomeLabel(execution.result)}`,
+    );
   }
 
   const result = finalExecution?.result;
@@ -287,6 +302,8 @@ async function runSingleAttempt(args: {
   commandEnv: Record<string, string>;
   toolchain: Record<string, string | null>;
   keepWorkspace?: boolean;
+  onProgress?: (message: string) => void;
+  progressPrefix: string;
 }): Promise<{ result: AttemptResult; attemptDir: string }> {
   const baseAttemptId = `${args.task.id}_${args.track.track}_${args.mode}_attempt${args.attemptNumber}`;
   const attemptId =
@@ -311,6 +328,9 @@ async function runSingleAttempt(args: {
   let modelResponse: ModelResponse | undefined;
 
   try {
+    args.onProgress?.(
+      `${args.progressPrefix}: invoke ${args.invocationNumber} started`,
+    );
     modelResponse = await adapter.invoke({
       modelId: args.modelId,
       prompt: args.prompt,
@@ -325,6 +345,9 @@ async function runSingleAttempt(args: {
         fixtureFilesJson,
       },
     });
+    args.onProgress?.(
+      `${args.progressPrefix}: invoke ${args.invocationNumber} completed (${formatDurationMs(modelResponse.latencyMs)})`,
+    );
 
     currentStage = "artifact_persist";
     await persistModelArtifacts(attemptDir, modelResponse);
@@ -337,8 +360,14 @@ async function runSingleAttempt(args: {
     await applyModelOutput(workspaceRoot, parsedOutput);
 
     currentStage = "build";
+    args.onProgress?.(
+      `${args.progressPrefix}: build started (${args.track.config.buildCommand})`,
+    );
     const buildResult = await runCommand(args.track.config.buildCommand, workspaceExecutionRoot, args.commandEnv);
     await writeJsonFile(path.join(logsDir, "build.json"), buildResult);
+    args.onProgress?.(
+      `${args.progressPrefix}: build ${buildResult.success ? "passed" : "failed"} (${formatDurationMs(buildResult.durationMs)})`,
+    );
 
     currentStage = "public_tests";
     const publicStage = await executeStage({
@@ -347,6 +376,9 @@ async function runSingleAttempt(args: {
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "public.json"),
       env: args.commandEnv,
+      onProgress: args.onProgress,
+      progressPrefix: args.progressPrefix,
+      label: "public tests",
     });
 
     currentStage = "hidden_tests";
@@ -358,6 +390,9 @@ async function runSingleAttempt(args: {
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "hidden.json"),
       env: args.commandEnv,
+      onProgress: args.onProgress,
+      progressPrefix: args.progressPrefix,
+      label: "hidden tests",
     });
 
     currentStage = "adversarial_tests";
@@ -369,6 +404,9 @@ async function runSingleAttempt(args: {
       cwd: workspaceExecutionRoot,
       logPath: path.join(logsDir, "adversarial.json"),
       env: args.commandEnv,
+      onProgress: args.onProgress,
+      progressPrefix: args.progressPrefix,
+      label: "adversarial tests",
     });
 
     currentStage = "artifact_snapshot";
@@ -443,6 +481,10 @@ async function runSingleAttempt(args: {
       attemptDir,
       result,
     });
+
+    args.onProgress?.(
+      `${args.progressPrefix}: attempt completed with ${formatOutcomeLabel(result)}`,
+    );
 
     if (!args.keepWorkspace && (await pathExists(workspaceDir))) {
       // temp dir cleanup is intentionally skipped in the first milestone to simplify debugging.
@@ -535,6 +577,10 @@ async function runSingleAttempt(args: {
       result,
     });
 
+    args.onProgress?.(
+      `${args.progressPrefix}: attempt failed at ${currentStage} (${errorMessage})`,
+    );
+
     if (!args.keepWorkspace && (await pathExists(workspaceDir))) {
       // temp dir cleanup is intentionally skipped in the first milestone to simplify debugging.
     }
@@ -613,8 +659,12 @@ async function executeInjectedStage(args: {
   cwd: string;
   logPath: string;
   env: Record<string, string>;
+  onProgress?: (message: string) => void;
+  progressPrefix: string;
+  label: string;
 }): Promise<{ summary: StageSummary; commandLogPath?: string }> {
   if (!args.enabled || !args.command) {
+    args.onProgress?.(`${args.progressPrefix}: ${args.label} skipped`);
     return {
       summary: emptyStageSummary(),
     };
@@ -627,6 +677,9 @@ async function executeInjectedStage(args: {
     cwd: args.cwd,
     logPath: args.logPath,
     env: args.env,
+    onProgress: args.onProgress,
+    progressPrefix: args.progressPrefix,
+    label: args.label,
   });
 }
 
@@ -636,13 +689,18 @@ async function executeStage(args: {
   cwd: string;
   logPath: string;
   env: Record<string, string>;
+  onProgress?: (message: string) => void;
+  progressPrefix: string;
+  label: string;
 }): Promise<{ summary: StageSummary; commandLogPath?: string }> {
   if (!args.enabled || !args.command) {
+    args.onProgress?.(`${args.progressPrefix}: ${args.label} skipped`);
     return {
       summary: emptyStageSummary(),
     };
   }
 
+  args.onProgress?.(`${args.progressPrefix}: ${args.label} started (${args.command})`);
   const result = await runCommand(args.command, args.cwd, args.env);
   await writeJsonFile(args.logPath, result);
   const combinedOutput = [result.stdout, result.stderr].filter(Boolean).join("\n");
@@ -655,6 +713,10 @@ async function executeStage(args: {
       failures: [summarizeCommandFailure(combinedOutput)],
     };
   }
+
+  args.onProgress?.(
+    `${args.progressPrefix}: ${args.label} ${result.success ? "finished" : "failed"} (${summary.passed}/${summary.total}, ${formatDurationMs(result.durationMs)})`,
+  );
 
   return {
     summary,
@@ -857,6 +919,8 @@ async function runAttemptWithCapabilityRetries(args: {
   commandEnv: Record<string, string>;
   toolchain: Record<string, string | null>;
   keepWorkspace?: boolean;
+  onProgress?: (message: string) => void;
+  progressPrefix: string;
 }): Promise<{ result: AttemptResult; attemptDir: string }> {
   let invocationNumber = 0;
   let finalExecution: { result: AttemptResult; attemptDir: string } | undefined;
@@ -878,6 +942,10 @@ async function runAttemptWithCapabilityRetries(args: {
     if (!shouldRetry) {
       break;
     }
+
+    args.onProgress?.(
+      `${args.progressPrefix}: model invoke failed, retrying provider call ${invocationNumber + 1}/${args.runtimeRetryLimit + 1}`,
+    );
   }
 
   if (!finalExecution) {
@@ -921,6 +989,22 @@ function formatStageFailures(stage: string, failures: string[]): string[] {
 
 function isGreenAttempt(result: AttemptResult): boolean {
   return result.status === "completed" && result.score.total >= 0.9999;
+}
+
+function formatDurationMs(durationMs: number | undefined): string {
+  if (durationMs === undefined) {
+    return "-";
+  }
+
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatOutcomeLabel(result: AttemptResult): string {
+  if (result.error?.stage === "model_invoke") {
+    return "runtime exclusion";
+  }
+
+  return `${(result.score.total * 100).toFixed(2)}/100`;
 }
 
 function classifyRunnerError(message: string): string[] {
