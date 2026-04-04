@@ -66,6 +66,7 @@ npm install --ignore-scripts
 ./benchmark compare
 ./benchmark compare --suite ranking_v1
 ./benchmark self-check --suite ranking_v1
+./benchmark clean
 ```
 
 ## Recommended Usage
@@ -105,6 +106,55 @@ For a single public cross-model leaderboard score, prefer:
 ```
 
 For top-end frontier ranking, keep a private suite under `configs/suites/private/` that mixes the public matrix with multiple unpublished holdouts from `tasks-private/`. This gives you a shared public scorecard plus a harder internal leaderboard that is less likely to saturate.
+
+## Storage and Cleanup
+
+This benchmark intentionally persists two kinds of repo-local data:
+
+- `results/`
+  - one directory per run or sweep
+  - prompts, raw model output, logs, scores, and workspace snapshots for each attempt
+- `.tooling/`
+  - shared Cargo registry state under `.tooling/cargo-home`
+  - shared compiled Rust artifacts under `.tooling/cargo-target/<task>/<track>`
+
+What is **not** supposed to persist anymore:
+
+- temporary benchmark workspaces created under the OS temp directory
+- temporary adapter invocation directories such as `codex-cli-benchmark-*`, `claude-code-benchmark-*`, `gemini-cli-benchmark-*`, and `opencode-benchmark-*`
+
+Those temp workspaces are now cleaned up automatically after each run, including failure paths. If disk usage grows over time, the expected places to inspect are `results/` and `.tooling/`, not hidden system temp storage.
+
+Why `.tooling/` can get large:
+
+- the benchmark does not compile just one Rust crate
+- it compiles many separate task/track workspaces
+- each task/track pair gets its own shared target directory to avoid cross-task contamination
+- Anchor/Solana dependencies and test binaries are much heavier than a typical small Rust CLI or library
+- `warm-cache`, `run`, and `run-all --warm-cache` all intentionally populate `.tooling/` so later runs are faster and more stable
+
+Built-in cleanup commands:
+
+```bash
+./benchmark clean
+./benchmark clean --results
+./benchmark clean --all
+```
+
+What those commands do:
+
+- `./benchmark clean`
+  - removes `.tooling/`
+  - removes leaked benchmark temp directories from the OS temp area
+  - removes leaked Gemini benchmark temp/history directories
+  - keeps `results/`
+- `./benchmark clean --results`
+  - keeps `.tooling/`
+  - removes saved run and sweep artifacts under `results/` while preserving `results/.gitkeep`
+  - also removes leaked benchmark temp directories outside the repo
+- `./benchmark clean --all`
+  - removes both `.tooling/` and `results/` contents
+  - also removes leaked benchmark temp directories outside the repo
 
 ## Localnet Wallet Fixtures
 
@@ -310,6 +360,48 @@ Example:
 ./benchmark warm-cache --track anchor --task counter_authority
 ```
 
+### `benchmark clean`
+
+Removes regenerable benchmark artifacts and legacy leaked temp directories.
+
+Command shape:
+
+```bash
+./benchmark clean [--tooling] [--results] [--all]
+```
+
+Default behavior:
+
+- with no flags, it clears `.tooling/` plus any leaked benchmark temp directories outside the repo
+- it does **not** remove `results/` unless you ask for that explicitly
+
+#### `--tooling`
+
+Clears `.tooling/` explicitly.
+
+This is mostly useful for scripts. It is the same cache cleanup you get from plain `./benchmark clean`.
+
+#### `--results`
+
+Removes saved benchmark artifacts under `results/` while preserving `results/.gitkeep`.
+
+Use it when:
+
+- you want to reclaim disk space from old runs
+- you do not need the stored prompts, logs, scores, or workspace snapshots anymore
+
+#### `--all`
+
+Runs both cleanup modes together.
+
+Examples:
+
+```bash
+./benchmark clean
+./benchmark clean --results
+./benchmark clean --all
+```
+
 ### `benchmark run`
 
 Runs one task/track pair and writes one run manifest plus one attempt result directory.
@@ -335,7 +427,7 @@ Examples:
 - `claude-code/sonnet`
 - `codex/default`
 - `gemini/default`
-- `opencode/opencode/glm-5`
+- `opencode/openrouter/qwen/qwen3-coder`
 
 #### `--track <track>`
 

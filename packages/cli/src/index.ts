@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readdir, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import path from "node:path";
 import { parseArgs } from "node:util";
 
 import { discoverTasks, validateAllTasks, type Difficulty } from "../../core/src/index.js";
@@ -13,6 +16,15 @@ import {
   type SweepEntry,
   type SweepReport,
 } from "../../runner/src/index.js";
+
+const BENCHMARK_TEMP_PREFIXES = [
+  "solana-llm-benchmark-",
+  "solana-llm-benchmark-warm-",
+  "codex-cli-benchmark-",
+  "claude-code-benchmark-",
+  "gemini-cli-benchmark-",
+  "opencode-benchmark-",
+] as const;
 
 async function main(): Promise<void> {
   const [, , ...args] = process.argv;
@@ -51,6 +63,11 @@ async function main(): Promise<void> {
 
   if (command === "warm-cache") {
     await handleWarmCache(args.slice(1));
+    return;
+  }
+
+  if (command === "clean") {
+    await handleClean(args.slice(1));
     return;
   }
 
@@ -579,6 +596,49 @@ async function handleWarmCache(args: string[]): Promise<void> {
   }
 }
 
+async function handleClean(args: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      all: {
+        type: "boolean",
+      },
+      results: {
+        type: "boolean",
+      },
+      tooling: {
+        type: "boolean",
+      },
+    },
+    strict: true,
+    allowPositionals: false,
+  });
+
+  if (values.all && (values.results || values.tooling)) {
+    throw new Error("clean --all cannot be combined with --results or --tooling.");
+  }
+
+  const cleanTooling = values.all || values.tooling || (!values.results && !values.all && !values.tooling);
+  const cleanResults = values.all || values.results;
+  const rootDir = process.cwd();
+
+  if (cleanTooling) {
+    await rm(path.join(rootDir, ".tooling"), { recursive: true, force: true });
+    console.log("Cleared .tooling cache.");
+  }
+
+  const leakedTempEntriesRemoved =
+    (await removePrefixedEntries(tmpdir(), BENCHMARK_TEMP_PREFIXES))
+    + (await removePrefixedEntries(path.join(homedir(), ".gemini", "history"), ["gemini-cli-benchmark-"]))
+    + (await removePrefixedEntries(path.join(homedir(), ".gemini", "tmp"), ["gemini-cli-benchmark-"]));
+  console.log(`Removed ${leakedTempEntriesRemoved} leaked temp entr${pluralize(leakedTempEntriesRemoved, "y", "ies")}.`);
+
+  if (cleanResults) {
+    const removedResultsEntries = await clearDirectoryContents(path.join(rootDir, "results"), new Set([".gitkeep"]));
+    console.log(`Removed ${removedResultsEntries} results entr${pluralize(removedResultsEntries, "y", "ies")}.`);
+  }
+}
+
 async function handleCompare(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -735,6 +795,60 @@ function printSweepOverview(reports: SweepReport[]): void {
 function formatReportRow(values: string[]): string {
   const widths = [22, 14, 10, 8, 10, 10, 20, 10, 10, 7, 10, 8, 8, 10, 10, 13, 24];
   return formatRow(values, widths);
+}
+
+async function removePrefixedEntries(rootDir: string, prefixes: readonly string[]): Promise<number> {
+  try {
+    const entries = await readdir(rootDir, { encoding: "utf8", withFileTypes: true });
+    let removedCount = 0;
+    for (const entry of entries) {
+      if (!prefixes.some((prefix) => entry.name.startsWith(prefix))) {
+        continue;
+      }
+
+      await rm(path.join(rootDir, entry.name), { recursive: true, force: true });
+      removedCount += 1;
+    }
+
+    return removedCount;
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return 0;
+    }
+
+    throw error;
+  }
+}
+
+async function clearDirectoryContents(rootDir: string, preservedEntries: ReadonlySet<string>): Promise<number> {
+  try {
+    const entries = await readdir(rootDir, { encoding: "utf8", withFileTypes: true });
+    let removedCount = 0;
+    for (const entry of entries) {
+      if (preservedEntries.has(entry.name)) {
+        continue;
+      }
+
+      await rm(path.join(rootDir, entry.name), { recursive: true, force: true });
+      removedCount += 1;
+    }
+
+    return removedCount;
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return 0;
+    }
+
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function pluralize(count: number, singularSuffix: string, pluralSuffix: string): string {
+  return count === 1 ? singularSuffix : pluralSuffix;
 }
 
 function formatSelectionFilters(report: SweepReport): string {
@@ -1008,6 +1122,7 @@ function printHelp(): void {
   benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
+  benchmark clean [--tooling] [--results] [--all]
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
   benchmark self-check [--track <track>] [--task <task>] [--difficulty <level>] [--suite <suite>]`);
 }
