@@ -287,6 +287,7 @@ Resume only the benchmark-caused failures from a prior sweep instead of rerunnin
 ./benchmark resume-sweep --latest
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
 ./benchmark resume-sweep --latest --retry-benchmark-faults
+./benchmark resume-sweep --latest --retry-target escrow_native_guardrails/native
 ./benchmark resume-sweep --latest --retry-stage model_output_validation
 ```
 
@@ -768,11 +769,32 @@ Important behavior:
 - `--latest` intentionally loads the newest saved sweep report from `results/sweeps/`
 - it does not mutate the original sweep; it writes a brand-new merged sweep report with resume metadata
 - by default it reruns runtime-excluded entries only
+- it does not automatically rerun all failed tasks, because normal build/test/model-output failures are part of the benchmark signal
 - you can also tell it to rerun scored entries for specific failure stages after fixing a benchmark bug
+- you can manually name exact `task/track` pairs when human judgment is needed
 
 #### `--latest`
 
 Uses the newest locally saved sweep report as the resume source.
+
+#### Default behavior
+
+If you run:
+
+```bash
+./benchmark resume-sweep --latest
+```
+
+the benchmark reruns only runtime-excluded entries from the source sweep. Today that mainly means `model_invoke` exclusions.
+
+It does **not** automatically rerun:
+
+- normal build failures
+- normal test failures
+- normal low-scoring outputs
+- `model_output_validation` failures
+
+That is intentional. Those are usually part of the model’s benchmark result unless you explicitly decide they were caused by a benchmark bug.
 
 #### `--retry-stage <stage[,stage...]>`
 
@@ -794,6 +816,26 @@ Adds the built-in benchmark-fault retry preset:
 
 Use this when a sweep was affected by a benchmark-side output or file-application bug and you want to rerun those entries along with any runtime exclusions.
 
+#### `--retry-target <task/track[,task/track...]>`
+
+Manually reruns the exact target pairs you name from the source sweep.
+
+Use this when you have reviewed a failure and decided, with human judgment, that a specific pair should be retried even though the benchmark cannot infer that automatically.
+
+Format:
+
+```bash
+--retry-target counter_authority/native
+--retry-target escrow_native_guardrails/native,vault_receipt_migration_guardrails/anchor
+```
+
+Rules:
+
+- the format must be exact `task/track`
+- `track` must be one of `anchor`, `native`, or `pinocchio`
+- every named pair must exist in the source sweep, otherwise the command fails clearly
+- manual targets are merged with the other retry selectors, not treated as a separate mode
+
 #### `--skip-runtime-excluded`
 
 Disables the default behavior of rerunning runtime-excluded entries. Use this only when you want to resume specific scored failure stages instead.
@@ -812,6 +854,8 @@ Examples:
 ./benchmark resume-sweep --latest
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
 ./benchmark resume-sweep --latest --retry-benchmark-faults
+./benchmark resume-sweep --latest --retry-target escrow_native_guardrails/native
+./benchmark resume-sweep --latest --retry-target escrow_native_guardrails/native,vault_receipt_migration_guardrails/anchor --skip-runtime-excluded
 ./benchmark resume-sweep --latest --retry-stage model_output_validation
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611 --retry-stage model_output_validation --require-full-sweep
 ```

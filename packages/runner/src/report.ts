@@ -218,6 +218,7 @@ export interface SweepResumeMetadata {
   carriedForwardTargetCount: number;
   retriedRuntimeExcluded: boolean;
   retryStages: string[];
+  retryTargetKeys: string[];
 }
 
 export interface SweepReport {
@@ -265,6 +266,7 @@ interface ResumeBenchmarkSweepArgs {
   sourceSweepId: string;
   retryRuntimeExcluded?: boolean;
   retryStages?: string[];
+  retryTargetKeys?: string[];
   warmCache?: boolean;
   onProgress?: (message: string) => void;
 }
@@ -442,15 +444,25 @@ export async function resumeBenchmarkSweep(args: ResumeBenchmarkSweepArgs): Prom
 
   const retryRuntimeExcluded = args.retryRuntimeExcluded ?? true;
   const retryStages = normalizeRetryStages(args.retryStages);
+  const retryTargetKeys = normalizeRetryTargetKeys(args.retryTargetKeys);
+  const sourceTargetKeys = new Set(sourceReport.entries.map((entry) => toTargetKey(entry.taskId, entry.track)));
+  const unknownRetryTargetKeys = retryTargetKeys.filter((targetKey) => !sourceTargetKeys.has(targetKey));
+  if (unknownRetryTargetKeys.length > 0) {
+    throw new Error(
+      `The following retry targets are not present in sweep ${args.sourceSweepId}: ${unknownRetryTargetKeys.join(", ")}.`,
+    );
+  }
   const selectedEntries = sourceReport.entries.filter((entry) =>
-    shouldRerunEntry(entry, { retryRuntimeExcluded, retryStages }),
+    shouldRerunEntry(entry, { retryRuntimeExcluded, retryStages, retryTargetKeys }),
   );
 
   if (selectedEntries.length === 0) {
     throw new Error(
-      retryStages.length > 0
-        ? `No matching entries found in sweep ${args.sourceSweepId} for runtime exclusions or stages: ${retryStages.join(", ")}.`
-        : `No runtime-excluded entries found in sweep ${args.sourceSweepId}.`,
+      describeEmptyResumeSelection(args.sourceSweepId, {
+        retryRuntimeExcluded,
+        retryStages,
+        retryTargetKeys,
+      }),
     );
   }
 
@@ -506,6 +518,7 @@ export async function resumeBenchmarkSweep(args: ResumeBenchmarkSweepArgs): Prom
       carriedForwardTargetCount: mergedEntries.length - rerunEntries.length,
       retriedRuntimeExcluded: retryRuntimeExcluded,
       retryStages,
+      retryTargetKeys,
     },
     summary: computeSweepSummary(mergedEntries),
     entries: mergedEntries,
@@ -716,18 +729,59 @@ function normalizeRetryStages(stages: string[] | undefined): string[] {
   );
 }
 
+function normalizeRetryTargetKeys(targetKeys: string[] | undefined): string[] {
+  return Array.from(
+    new Set(
+      (targetKeys ?? [])
+        .map((targetKey) => targetKey.trim())
+        .filter((targetKey) => targetKey.length > 0),
+    ),
+  );
+}
+
 function shouldRerunEntry(
   entry: SweepEntry,
   args: {
     retryRuntimeExcluded: boolean;
     retryStages: string[];
+    retryTargetKeys: string[];
   },
 ): boolean {
+  if (args.retryTargetKeys.includes(toTargetKey(entry.taskId, entry.track))) {
+    return true;
+  }
+
   if (args.retryRuntimeExcluded && !entry.benchmarkEligible) {
     return true;
   }
 
   return entry.errorStage !== undefined && args.retryStages.includes(entry.errorStage);
+}
+
+function describeEmptyResumeSelection(
+  sourceSweepId: string,
+  args: {
+    retryRuntimeExcluded: boolean;
+    retryStages: string[];
+    retryTargetKeys: string[];
+  },
+): string {
+  const selectors: string[] = [];
+  if (args.retryRuntimeExcluded) {
+    selectors.push("runtime exclusions");
+  }
+  if (args.retryStages.length > 0) {
+    selectors.push(`stages: ${args.retryStages.join(", ")}`);
+  }
+  if (args.retryTargetKeys.length > 0) {
+    selectors.push(`targets: ${args.retryTargetKeys.join(", ")}`);
+  }
+
+  if (selectors.length === 0) {
+    return `No resume selectors were provided for sweep ${sourceSweepId}.`;
+  }
+
+  return `No matching entries found in sweep ${sourceSweepId} for ${selectors.join(" | ")}.`;
 }
 
 function toBenchmarkTargetFromEntry(entry: SweepEntry): BenchmarkTarget {
@@ -744,7 +798,7 @@ function toBenchmarkTargetFromEntry(entry: SweepEntry): BenchmarkTarget {
 }
 
 function toTargetKey(taskId: string, track: TrackId): string {
-  return `${taskId}::${track}`;
+  return `${taskId}/${track}`;
 }
 
 async function normalizeSweepReport(rootDir: string, report: SweepReport): Promise<SweepReport> {
@@ -839,6 +893,13 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
       difficulty: report.selection?.difficulty,
     },
     artifacts: report.artifacts ?? buildSweepArtifacts(report.sweepId),
+    resume: report.resume
+      ? {
+          ...report.resume,
+          retryStages: normalizeRetryStages(report.resume.retryStages),
+          retryTargetKeys: normalizeRetryTargetKeys(report.resume.retryTargetKeys),
+        }
+      : undefined,
     maxAttempts: report.maxAttempts ?? Math.max(...entries.map((entry) => entry.maxAttempts), 1),
     entries,
     summary: computeSweepSummary(entries),
@@ -1250,7 +1311,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
       ? `- Resume source benchmark: \`${report.resume.sourceBenchmarkCommit}\`${report.resume.sourceBenchmarkDirty !== undefined ? ` (${report.resume.sourceBenchmarkDirty ? "dirty" : "clean"})` : ""}`
       : "- Resume source benchmark: -",
     report.resume
-      ? `- Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}`
+      ? `- Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}${report.resume.retryTargetKeys.length > 0 ? `, targets ${report.resume.retryTargetKeys.join(", ")}` : ""}`
       : "- Resume selection: -",
     `- Filters: ${filters}`,
     "",

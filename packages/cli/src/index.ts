@@ -405,6 +405,9 @@ async function handleResumeSweep(args: string[]): Promise<void> {
       "retry-benchmark-faults": {
         type: "boolean",
       },
+      "retry-target": {
+        type: "string",
+      },
       "retry-stage": {
         type: "string",
       },
@@ -440,9 +443,10 @@ async function handleResumeSweep(args: string[]): Promise<void> {
     parseCsvList(values["retry-stage"]),
     values["retry-benchmark-faults"] ? DEFAULT_BENCHMARK_RETRY_STAGES : [],
   );
+  const retryTargetKeys = parseRetryTargetKeys(values["retry-target"]);
   const retryRuntimeExcluded = !(values["skip-runtime-excluded"] ?? false);
-  if (!retryRuntimeExcluded && retryStages.length === 0) {
-    throw new Error("resume-sweep requires runtime exclusions or at least one --retry-stage selection.");
+  if (!retryRuntimeExcluded && retryStages.length === 0 && retryTargetKeys.length === 0) {
+    throw new Error("resume-sweep requires runtime exclusions, --retry-stage, or --retry-target.");
   }
 
   const report = await resumeBenchmarkSweep({
@@ -450,6 +454,7 @@ async function handleResumeSweep(args: string[]): Promise<void> {
     sourceSweepId,
     retryRuntimeExcluded,
     retryStages,
+    retryTargetKeys,
     warmCache: values["warm-cache"] ?? false,
     onProgress: (message) => console.log(`[progress] ${message}`),
   });
@@ -808,7 +813,7 @@ function printSweepReport(report: SweepReport): void {
       );
     }
     console.log(
-      `Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}`,
+      `Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}${report.resume.retryTargetKeys.length > 0 ? `, targets ${report.resume.retryTargetKeys.join(", ")}` : ""}`,
     );
   }
   const filters = formatSelectionFilters(report);
@@ -1311,7 +1316,7 @@ function printHelp(): void {
   benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
   benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
-  benchmark resume-sweep [<sweep-id> | --latest] [--retry-benchmark-faults] [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
+  benchmark resume-sweep [<sweep-id> | --latest] [--retry-benchmark-faults] [--retry-stage <stage[,stage...]>] [--retry-target <task/track[,task/track...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark clean [--tooling] [--results] [--all]
@@ -1363,6 +1368,27 @@ function parseCsvList(value: string | undefined): string[] {
 
 function mergeUniqueStages(...groups: ReadonlyArray<ReadonlyArray<string>>): string[] {
   return Array.from(new Set(groups.flat().map((stage) => stage.trim()).filter((stage) => stage.length > 0)));
+}
+
+function parseRetryTargetKeys(value: string | undefined): string[] {
+  return parseCsvList(value).map((target) => {
+    const slashIndex = target.lastIndexOf("/");
+    if (slashIndex <= 0 || slashIndex === target.length - 1) {
+      throw new Error(`Invalid --retry-target value: ${target}. Expected task/track.`);
+    }
+
+    const taskId = target.slice(0, slashIndex).trim();
+    const track = target.slice(slashIndex + 1).trim();
+    if (!taskId || !isValidTrackId(track)) {
+      throw new Error(`Invalid --retry-target value: ${target}. Expected task/track with track anchor|native|pinocchio.`);
+    }
+
+    return `${taskId}/${track}`;
+  });
+}
+
+function isValidTrackId(value: string): value is "anchor" | "native" | "pinocchio" {
+  return value === "anchor" || value === "native" || value === "pinocchio";
 }
 
 main().catch((error: unknown) => {
