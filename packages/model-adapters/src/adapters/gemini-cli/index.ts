@@ -53,7 +53,7 @@ export class GeminiCliModelAdapter implements ModelAdapter {
 
       return {
         rawText: cliResult.rawText,
-        parsedOutput: extractStructuredOutput(cliResult.rawText),
+        parsedOutput: tryExtractStructuredOutput(cliResult.rawText),
         latencyMs: Date.now() - startedAt,
         finishReason: "stop",
         usage: extractUsage(cliResult.output),
@@ -213,6 +213,16 @@ function extractStructuredOutput(rawText: string): { files: Record<string, strin
   }
 
   return { files };
+}
+
+function tryExtractStructuredOutput(rawText: string): { files: Record<string, string> } | undefined {
+  try {
+    return extractStructuredOutput(rawText);
+  } catch {
+    // Let the runner classify malformed model output at model_output_validation
+    // instead of treating it as a provider/runtime failure.
+    return undefined;
+  }
 }
 
 function extractUsage(output: GeminiJsonOutput): ModelResponse["usage"] {
