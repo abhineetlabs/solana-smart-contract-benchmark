@@ -990,11 +990,11 @@ The repo now ships with five practical suite tiers:
 - `hard_v1`: realistic harder custody, accounting, and multisig tasks
 - `nightmare_v1`: ugly repair, CPI, and migration tasks
 - `personal_ranking_v1`: a workflow-weighted blend intended for picking your default daily model
-- `leaderboard_v1`: a broad public leaderboard slice that includes every current target pair but weights native, repair, migration, and CPI-heavy work more strongly
+- `leaderboard_v1`: a broad public leaderboard slice that includes every current public target pair but weights native, repair, migration, and CPI-heavy work more strongly
 
 `personal_ranking_v1` uses workflow-aware weight rules, so repair, migration, and native tasks count more heavily than easy public generation tasks.
 
-`leaderboard_v1` is the best current single-suite default when you want one cross-model comparison table spanning lightweight fast models and frontier reasoning models.
+`leaderboard_v1` is the best current public single-suite default when you want one cross-model comparison table spanning lightweight fast models and frontier reasoning models.
 
 ## Private Holdouts
 
