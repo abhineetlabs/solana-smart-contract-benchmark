@@ -10,6 +10,7 @@ import {
   listAvailableSuites,
   listBenchmarkTargets,
   loadSweepReports,
+  resumeBenchmarkSweep,
   runBenchmark,
   runBenchmarkSweep,
   warmTaskCache,
@@ -58,6 +59,11 @@ async function main(): Promise<void> {
 
   if (command === "run-all") {
     await handleRunAll(args.slice(1));
+    return;
+  }
+
+  if (command === "resume-sweep") {
+    await handleResumeSweep(args.slice(1));
     return;
   }
 
@@ -385,6 +391,62 @@ async function handleRunAll(args: string[]): Promise<void> {
   }
 
   if (reports.some((report) => report.summary.failedTargets > 0)) {
+    process.exitCode = 1;
+  }
+}
+
+async function handleResumeSweep(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: {
+      "retry-stage": {
+        type: "string",
+      },
+      "skip-runtime-excluded": {
+        type: "boolean",
+      },
+      "warm-cache": {
+        type: "boolean",
+      },
+      "require-full-sweep": {
+        type: "boolean",
+      },
+    },
+    strict: true,
+    allowPositionals: true,
+  });
+
+  const sourceSweepId = positionals[0];
+  if (!sourceSweepId) {
+    throw new Error("resume-sweep requires a sweep ID.");
+  }
+
+  const retryStages = parseCsvList(values["retry-stage"]);
+  const retryRuntimeExcluded = !(values["skip-runtime-excluded"] ?? false);
+  if (!retryRuntimeExcluded && retryStages.length === 0) {
+    throw new Error("resume-sweep requires runtime exclusions or at least one --retry-stage selection.");
+  }
+
+  const report = await resumeBenchmarkSweep({
+    rootDir: process.cwd(),
+    sourceSweepId,
+    retryRuntimeExcluded,
+    retryStages,
+    warmCache: values["warm-cache"] ?? false,
+    onProgress: (message) => console.log(`[progress] ${message}`),
+  });
+
+  printSweepReport(report);
+
+  if ((values["require-full-sweep"] ?? false) && report.summary.runtimeExcludedTargets > 0) {
+    console.error(
+      `Incomplete sweep: ${report.summary.runtimeExcludedTargets} target(s) were excluded at runtime. Increase --runtime-retries or resume the sweep again before comparing models.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (report.summary.failedTargets > 0) {
     process.exitCode = 1;
   }
 }
@@ -717,6 +779,19 @@ function printSweepReport(report: SweepReport): void {
   }
   if (report.suite?.fingerprint) {
     console.log(`Suite fingerprint: ${report.suite.fingerprint}`);
+  }
+  if (report.resume) {
+    console.log(
+      `Resumed from: ${report.resume.sourceSweepId} (reran ${report.resume.rerunTargetCount}, carried ${report.resume.carriedForwardTargetCount})`,
+    );
+    if (report.resume.sourceBenchmarkCommit) {
+      console.log(
+        `Resume source benchmark: ${report.resume.sourceBenchmarkCommit}${report.resume.sourceBenchmarkDirty !== undefined ? ` (${report.resume.sourceBenchmarkDirty ? "dirty" : "clean"})` : ""}`,
+      );
+    }
+    console.log(
+      `Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}`,
+    );
   }
   const filters = formatSelectionFilters(report);
   if (filters !== "-") {
@@ -1218,11 +1293,23 @@ function printHelp(): void {
   benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
   benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
+  benchmark resume-sweep <sweep-id> [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark clean [--tooling] [--results] [--all]
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
   benchmark self-check [--track <track>] [--task <task>] [--difficulty <level>] [--suite <suite>]`);
+}
+
+function parseCsvList(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
 main().catch((error: unknown) => {

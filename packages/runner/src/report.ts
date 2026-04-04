@@ -209,6 +209,17 @@ export interface SweepArtifacts {
   markdownSummaryPath: string;
 }
 
+export interface SweepResumeMetadata {
+  sourceSweepId: string;
+  sourceCreatedAt: string;
+  sourceBenchmarkCommit?: string;
+  sourceBenchmarkDirty?: boolean;
+  rerunTargetCount: number;
+  carriedForwardTargetCount: number;
+  retriedRuntimeExcluded: boolean;
+  retryStages: string[];
+}
+
 export interface SweepReport {
   schemaVersion: number;
   sweepId: string;
@@ -229,6 +240,7 @@ export interface SweepReport {
   selection: SweepSelection;
   maxAttempts: number;
   artifacts: SweepArtifacts;
+  resume?: SweepResumeMetadata;
   summary: SweepSummary;
   entries: SweepEntry[];
 }
@@ -246,6 +258,15 @@ interface RunBenchmarkSweepArgs {
   difficulty?: Difficulty;
   warmCache?: boolean;
   maxAttempts?: number;
+}
+
+interface ResumeBenchmarkSweepArgs {
+  rootDir: string;
+  sourceSweepId: string;
+  retryRuntimeExcluded?: boolean;
+  retryStages?: string[];
+  warmCache?: boolean;
+  onProgress?: (message: string) => void;
 }
 
 interface LoadSweepReportsArgs {
@@ -360,40 +381,17 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
   }
 
   const sweepId = createSweepId();
-  const entries: SweepEntry[] = [];
-
-  for (const [targetIndex, target] of targets.entries()) {
-    const progressPrefix = `[${targetIndex + 1}/${targets.length}] ${target.taskId}/${target.track}`;
-    args.onProgress?.(`${progressPrefix}: target started`);
-    if (args.warmCache) {
-      args.onProgress?.(`${progressPrefix}: warm-cache started`);
-      await warmTaskCache({
-        rootDir: args.rootDir,
-        taskId: target.taskId,
-        track: target.track,
-      });
-      args.onProgress?.(`${progressPrefix}: warm-cache finished`);
-    }
-
-    const execution = await runBenchmark({
-      rootDir: args.rootDir,
-      taskId: target.taskId,
-      track: target.track,
-      modelId: args.modelId,
-      mode,
-      maxAttempts,
-      strictCapability,
-      runtimeRetryLimit,
-      onProgress: args.onProgress,
-      progressPrefix,
-    });
-
-    const entry = toSweepEntry(target, args.rootDir, execution);
-    entries.push(entry);
-    args.onProgress?.(
-      `${progressPrefix}: target finished (${entry.scoringDisposition === "scored" ? `${formatScore100(entry.score)}/100` : `excluded:${entry.errorStage ?? "runtime"}`})`,
-    );
-  }
+  const entries = await executeSweepTargets({
+    rootDir: args.rootDir,
+    targets,
+    modelId: args.modelId,
+    mode,
+    maxAttempts,
+    strictCapability,
+    runtimeRetryLimit,
+    warmCache: args.warmCache ?? false,
+    onProgress: args.onProgress,
+  });
 
   const endedAtDate = new Date();
   const report: SweepReport = {
@@ -426,6 +424,91 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     artifacts: buildSweepArtifacts(sweepId),
     summary: computeSweepSummary(entries),
     entries,
+  };
+
+  await persistSweepReport(args.rootDir, report);
+  return report;
+}
+
+export async function resumeBenchmarkSweep(args: ResumeBenchmarkSweepArgs): Promise<SweepReport> {
+  const [sourceReport] = await loadSweepReports({
+    rootDir: args.rootDir,
+    sweepIds: [args.sourceSweepId],
+  });
+
+  if (!sourceReport) {
+    throw new Error(`No sweep report found for ${args.sourceSweepId}.`);
+  }
+
+  const retryRuntimeExcluded = args.retryRuntimeExcluded ?? true;
+  const retryStages = normalizeRetryStages(args.retryStages);
+  const selectedEntries = sourceReport.entries.filter((entry) =>
+    shouldRerunEntry(entry, { retryRuntimeExcluded, retryStages }),
+  );
+
+  if (selectedEntries.length === 0) {
+    throw new Error(
+      retryStages.length > 0
+        ? `No matching entries found in sweep ${args.sourceSweepId} for runtime exclusions or stages: ${retryStages.join(", ")}.`
+        : `No runtime-excluded entries found in sweep ${args.sourceSweepId}.`,
+    );
+  }
+
+  const startedAtDate = new Date();
+  const startedAtMs = startedAtDate.getTime();
+  const sweepId = createSweepId();
+  const targets = selectedEntries.map(toBenchmarkTargetFromEntry);
+  const rerunEntries = await executeSweepTargets({
+    rootDir: args.rootDir,
+    targets,
+    modelId: sourceReport.modelId,
+    mode: sourceReport.mode,
+    maxAttempts: sourceReport.maxAttempts,
+    strictCapability: sourceReport.strictCapability,
+    runtimeRetryLimit: sourceReport.runtimeRetryLimit,
+    warmCache: args.warmCache ?? false,
+    onProgress: args.onProgress,
+  });
+  const rerunEntryMap = new Map(
+    rerunEntries.map((entry) => [toTargetKey(entry.taskId, entry.track), entry]),
+  );
+  const mergedEntries = sourceReport.entries.map(
+    (entry) => rerunEntryMap.get(toTargetKey(entry.taskId, entry.track)) ?? entry,
+  );
+  const endedAtDate = new Date();
+
+  const report: SweepReport = {
+    schemaVersion: SWEEP_REPORT_SCHEMA_VERSION,
+    sweepId,
+    startedAt: startedAtDate.toISOString(),
+    endedAt: endedAtDate.toISOString(),
+    durationMs: endedAtDate.getTime() - startedAtMs,
+    createdAt: endedAtDate.toISOString(),
+    modelId: sourceReport.modelId,
+    modelProvider: inferModelProvider(sourceReport.modelId),
+    modelAdapter: getAdapterForModel(sourceReport.modelId).id,
+    mode: sourceReport.mode,
+    warmed: args.warmCache ?? false,
+    strictCapability: sourceReport.strictCapability,
+    runtimeRetryLimit: sourceReport.runtimeRetryLimit,
+    suiteId: sourceReport.suiteId,
+    suite: sourceReport.suite,
+    environment: await collectSweepEnvironment(args.rootDir),
+    selection: sourceReport.selection,
+    maxAttempts: sourceReport.maxAttempts,
+    artifacts: buildSweepArtifacts(sweepId),
+    resume: {
+      sourceSweepId: sourceReport.sweepId,
+      sourceCreatedAt: sourceReport.createdAt,
+      sourceBenchmarkCommit: sourceReport.environment?.benchmarkCommit,
+      sourceBenchmarkDirty: sourceReport.environment?.benchmarkDirty,
+      rerunTargetCount: rerunEntries.length,
+      carriedForwardTargetCount: mergedEntries.length - rerunEntries.length,
+      retriedRuntimeExcluded: retryRuntimeExcluded,
+      retryStages,
+    },
+    summary: computeSweepSummary(mergedEntries),
+    entries: mergedEntries,
   };
 
   await persistSweepReport(args.rootDir, report);
@@ -509,6 +592,56 @@ function toSweepEntry(
   };
 }
 
+async function executeSweepTargets(args: {
+  rootDir: string;
+  targets: BenchmarkTarget[];
+  modelId: string;
+  mode: InvocationMode;
+  maxAttempts: number;
+  strictCapability: boolean;
+  runtimeRetryLimit: number;
+  warmCache: boolean;
+  onProgress?: (message: string) => void;
+}): Promise<SweepEntry[]> {
+  const entries: SweepEntry[] = [];
+
+  for (const [targetIndex, target] of args.targets.entries()) {
+    const progressPrefix = `[${targetIndex + 1}/${args.targets.length}] ${target.taskId}/${target.track}`;
+    args.onProgress?.(`${progressPrefix}: target started`);
+    if (args.warmCache) {
+      args.onProgress?.(`${progressPrefix}: warm-cache started`);
+      await warmTaskCache({
+        rootDir: args.rootDir,
+        taskId: target.taskId,
+        track: target.track,
+      });
+      args.onProgress?.(`${progressPrefix}: warm-cache finished`);
+    }
+
+    const execution = await runBenchmark({
+      rootDir: args.rootDir,
+      taskId: target.taskId,
+      track: target.track,
+      modelId: args.modelId,
+      mode: args.mode,
+      interactionMode: target.interactionMode,
+      maxAttempts: args.maxAttempts,
+      strictCapability: args.strictCapability,
+      runtimeRetryLimit: args.runtimeRetryLimit,
+      onProgress: args.onProgress,
+      progressPrefix,
+    });
+
+    const entry = toSweepEntry(target, args.rootDir, execution);
+    entries.push(entry);
+    args.onProgress?.(
+      `${progressPrefix}: target finished (${entry.scoringDisposition === "scored" ? `${formatScore100(entry.score)}/100` : `excluded:${entry.errorStage ?? "runtime"}`})`,
+    );
+  }
+
+  return entries;
+}
+
 function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
   const overall = computeAggregateSummary(entries);
   const scoredEntries = entries.filter((entry) => entry.benchmarkEligible);
@@ -571,6 +704,47 @@ async function persistSweepReport(rootDir: string, report: SweepReport): Promise
 
 function createSweepId(): string {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}`;
+}
+
+function normalizeRetryStages(stages: string[] | undefined): string[] {
+  return Array.from(
+    new Set(
+      (stages ?? [])
+        .map((stage) => stage.trim())
+        .filter((stage) => stage.length > 0),
+    ),
+  );
+}
+
+function shouldRerunEntry(
+  entry: SweepEntry,
+  args: {
+    retryRuntimeExcluded: boolean;
+    retryStages: string[];
+  },
+): boolean {
+  if (args.retryRuntimeExcluded && !entry.benchmarkEligible) {
+    return true;
+  }
+
+  return entry.errorStage !== undefined && args.retryStages.includes(entry.errorStage);
+}
+
+function toBenchmarkTargetFromEntry(entry: SweepEntry): BenchmarkTarget {
+  return {
+    taskId: entry.taskId,
+    track: entry.track,
+    category: entry.category,
+    difficulty: entry.difficulty,
+    interactionMode: entry.interactionMode,
+    title: entry.title,
+    weight: entry.weight,
+    taskSource: entry.taskSource,
+  };
+}
+
+function toTargetKey(taskId: string, track: TrackId): string {
+  return `${taskId}::${track}`;
 }
 
 async function normalizeSweepReport(rootDir: string, report: SweepReport): Promise<SweepReport> {
@@ -1069,6 +1243,15 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     report.suite?.fingerprint
       ? `- Suite fingerprint: \`${report.suite.fingerprint}\``
       : "- Suite fingerprint: -",
+    report.resume
+      ? `- Resumed from: \`${report.resume.sourceSweepId}\` (reran ${report.resume.rerunTargetCount}, carried ${report.resume.carriedForwardTargetCount})`
+      : "- Resumed from: -",
+    report.resume?.sourceBenchmarkCommit
+      ? `- Resume source benchmark: \`${report.resume.sourceBenchmarkCommit}\`${report.resume.sourceBenchmarkDirty !== undefined ? ` (${report.resume.sourceBenchmarkDirty ? "dirty" : "clean"})` : ""}`
+      : "- Resume source benchmark: -",
+    report.resume
+      ? `- Resume selection: runtime-excluded ${report.resume.retriedRuntimeExcluded ? "yes" : "no"}${report.resume.retryStages.length > 0 ? `, stages ${report.resume.retryStages.join(", ")}` : ""}`
+      : "- Resume selection: -",
     `- Filters: ${filters}`,
     "",
     "## Summary",
