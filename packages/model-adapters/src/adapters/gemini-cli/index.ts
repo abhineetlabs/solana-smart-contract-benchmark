@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
@@ -37,6 +37,9 @@ export class GeminiCliModelAdapter implements ModelAdapter {
     }
 
     const invocationDir = await mkdtemp(path.join(tmpdir(), "gemini-cli-benchmark-"));
+    const invocationId = path.basename(invocationDir);
+    const geminiHistoryDir = path.join(homedir(), ".gemini", "history", invocationId);
+    const geminiTmpDir = path.join(homedir(), ".gemini", "tmp", invocationId);
     const startedAt = Date.now();
 
     try {
@@ -62,7 +65,11 @@ export class GeminiCliModelAdapter implements ModelAdapter {
         },
       };
     } finally {
-      await rm(invocationDir, { recursive: true, force: true });
+      await Promise.all([
+        rm(invocationDir, { recursive: true, force: true }),
+        rm(geminiHistoryDir, { recursive: true, force: true }),
+        rm(geminiTmpDir, { recursive: true, force: true }),
+      ]);
     }
   }
 }

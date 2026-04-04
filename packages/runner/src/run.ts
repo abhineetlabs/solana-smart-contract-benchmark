@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -486,10 +486,6 @@ async function runSingleAttempt(args: {
       `${args.progressPrefix}: attempt completed with ${formatOutcomeLabel(result)}`,
     );
 
-    if (!args.keepWorkspace && (await pathExists(workspaceDir))) {
-      // temp dir cleanup is intentionally skipped in the first milestone to simplify debugging.
-    }
-
     return { result, attemptDir };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -581,11 +577,11 @@ async function runSingleAttempt(args: {
       `${args.progressPrefix}: attempt failed at ${currentStage} (${errorMessage})`,
     );
 
-    if (!args.keepWorkspace && (await pathExists(workspaceDir))) {
-      // temp dir cleanup is intentionally skipped in the first milestone to simplify debugging.
-    }
-
     return { result, attemptDir };
+  } finally {
+    if (!args.keepWorkspace && (await pathExists(workspaceDir))) {
+      await rm(workspaceDir, { recursive: true, force: true });
+    }
   }
 }
 
