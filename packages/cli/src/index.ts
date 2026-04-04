@@ -402,6 +402,9 @@ async function handleResumeSweep(args: string[]): Promise<void> {
       latest: {
         type: "boolean",
       },
+      "retry-benchmark-faults": {
+        type: "boolean",
+      },
       "retry-stage": {
         type: "string",
       },
@@ -433,7 +436,10 @@ async function handleResumeSweep(args: string[]): Promise<void> {
     useLatest: values.latest ?? false,
   });
 
-  const retryStages = parseCsvList(values["retry-stage"]);
+  const retryStages = mergeUniqueStages(
+    parseCsvList(values["retry-stage"]),
+    values["retry-benchmark-faults"] ? DEFAULT_BENCHMARK_RETRY_STAGES : [],
+  );
   const retryRuntimeExcluded = !(values["skip-runtime-excluded"] ?? false);
   if (!retryRuntimeExcluded && retryStages.length === 0) {
     throw new Error("resume-sweep requires runtime exclusions or at least one --retry-stage selection.");
@@ -1305,13 +1311,19 @@ function printHelp(): void {
   benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
   benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
-  benchmark resume-sweep [<sweep-id> | --latest] [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
+  benchmark resume-sweep [<sweep-id> | --latest] [--retry-benchmark-faults] [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark clean [--tooling] [--results] [--all]
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
   benchmark self-check [--track <track>] [--task <task>] [--difficulty <level>] [--suite <suite>]`);
 }
+
+const DEFAULT_BENCHMARK_RETRY_STAGES = [
+  "artifact_persist",
+  "model_output_validation",
+  "workspace_apply",
+] as const;
 
 async function resolveResumeSweepId(args: {
   rootDir: string;
@@ -1347,6 +1359,10 @@ function parseCsvList(value: string | undefined): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function mergeUniqueStages(...groups: ReadonlyArray<ReadonlyArray<string>>): string[] {
+  return Array.from(new Set(groups.flat().map((stage) => stage.trim()).filter((stage) => stage.length > 0)));
 }
 
 main().catch((error: unknown) => {

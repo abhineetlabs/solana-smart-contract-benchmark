@@ -286,6 +286,7 @@ Resume only the benchmark-caused failures from a prior sweep instead of rerunnin
 ```bash
 ./benchmark resume-sweep --latest
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
+./benchmark resume-sweep --latest --retry-benchmark-faults
 ./benchmark resume-sweep --latest --retry-stage model_output_validation
 ```
 
@@ -783,6 +784,16 @@ Also reruns entries whose final failure stage matches one of the named stages, f
 
 This is useful when you fix a benchmark-side issue and want to rerun only the affected tasks.
 
+#### `--retry-benchmark-faults`
+
+Adds the built-in benchmark-fault retry preset:
+
+- `artifact_persist`
+- `model_output_validation`
+- `workspace_apply`
+
+Use this when a sweep was affected by a benchmark-side output or file-application bug and you want to rerun those entries along with any runtime exclusions.
+
 #### `--skip-runtime-excluded`
 
 Disables the default behavior of rerunning runtime-excluded entries. Use this only when you want to resume specific scored failure stages instead.
@@ -800,6 +811,7 @@ Examples:
 ```bash
 ./benchmark resume-sweep --latest
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
+./benchmark resume-sweep --latest --retry-benchmark-faults
 ./benchmark resume-sweep --latest --retry-stage model_output_validation
 ./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611 --retry-stage model_output_validation --require-full-sweep
 ```
