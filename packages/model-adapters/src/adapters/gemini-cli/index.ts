@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
+import { FILE_MAP_OUTPUT_FORMAT_LINES, parseBenchmarkJsonFromText, tryParseFileMapOutputFromText } from "../../../../shared/src/index.js";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const GEMINI_PREFIX = "gemini/";
@@ -89,10 +90,7 @@ function resolveGeminiModelId(modelId: string): string | undefined {
 
 function buildGeminiPrompt(prompt: string): string {
   return [
-    "Return only valid JSON.",
-    'The JSON must have the exact shape {"files":{"relative/path":"full file contents"}}.',
-    "Do not wrap the JSON in markdown fences.",
-    "Do not include explanations before or after the JSON.",
+    ...FILE_MAP_OUTPUT_FORMAT_LINES,
     "Do not use any tools, shell commands, web search, file reads, or MCP servers.",
     "",
     prompt,
@@ -178,7 +176,7 @@ async function runCliCommand(args: {
 
 function parseGeminiOutput(stdout: string): GeminiJsonOutput {
   try {
-    return JSON.parse(stdout) as GeminiJsonOutput;
+    return parseBenchmarkJsonFromText(stdout) as GeminiJsonOutput;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Gemini CLI returned invalid JSON output: ${message}`);
@@ -186,43 +184,18 @@ function parseGeminiOutput(stdout: string): GeminiJsonOutput {
 }
 
 function extractStructuredOutput(rawText: string): { files: Record<string, string> } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Gemini CLI returned invalid JSON: ${message}`);
+  const parsed = tryParseFileMapOutputFromText(rawText);
+  if (!parsed) {
+    throw new Error("Gemini CLI returned invalid file-map JSON.");
   }
 
-  if (!parsed || typeof parsed !== "object" || !("files" in parsed)) {
-    throw new Error("Gemini CLI did not return a files map.");
-  }
-
-  const candidate = (parsed as { files?: unknown }).files;
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-    throw new Error("Gemini CLI returned a malformed files map.");
-  }
-
-  const files: Record<string, string> = {};
-  for (const [relativePath, contents] of Object.entries(candidate)) {
-    if (typeof contents !== "string") {
-      throw new Error(`Gemini CLI returned non-string contents for "${relativePath}".`);
-    }
-
-    files[relativePath] = contents;
-  }
-
-  return { files };
+  return parsed;
 }
 
 function tryExtractStructuredOutput(rawText: string): { files: Record<string, string> } | undefined {
-  try {
-    return extractStructuredOutput(rawText);
-  } catch {
-    // Let the runner classify malformed model output at model_output_validation
-    // instead of treating it as a provider/runtime failure.
-    return undefined;
-  }
+  // Let the runner classify malformed model output at model_output_validation
+  // instead of treating it as a provider/runtime failure.
+  return tryParseFileMapOutputFromText(rawText);
 }
 
 function extractUsage(output: GeminiJsonOutput): ModelResponse["usage"] {

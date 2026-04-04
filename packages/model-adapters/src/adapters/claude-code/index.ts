@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const CLAUDE_CODE_PREFIX = "claude-code/";
@@ -140,7 +141,7 @@ async function invokeClaudeCode(args: {
 
   let parsed: ClaudeCodeCliEnvelope;
   try {
-    parsed = JSON.parse(output) as ClaudeCodeCliEnvelope;
+    parsed = parseBenchmarkJsonFromText(output) as ClaudeCodeCliEnvelope;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Claude Code returned invalid JSON: ${message}${formatStderr(stderr)}`);

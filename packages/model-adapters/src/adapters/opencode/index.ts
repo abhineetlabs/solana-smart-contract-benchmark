@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { FILE_MAP_OUTPUT_FORMAT_LINES, tryParseFileMapOutputFromText } from "../../../../shared/src/index.js";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const OPENCODE_PREFIX = "opencode/";
@@ -84,10 +85,7 @@ function resolveCliModelId(modelId: string): string | undefined {
 
 function buildOpenCodePrompt(prompt: string): string {
   return [
-    "Return only valid JSON.",
-    'The JSON must have the exact shape {"files":{"relative/path":"full file contents"}}.',
-    "Do not wrap the JSON in markdown fences.",
-    "Do not include explanations before or after the JSON.",
+    ...FILE_MAP_OUTPUT_FORMAT_LINES,
     "",
     prompt,
   ].join("\n");
@@ -99,7 +97,7 @@ async function invokeOpenCode(args: {
   cwd: string;
 }): Promise<{
   rawText: string;
-  parsedOutput: { files: Record<string, string> };
+  parsedOutput?: { files: Record<string, string> };
   finishReason?: string;
   forwardedModel?: string;
   sessionId?: string;
@@ -128,7 +126,7 @@ async function invokeOpenCode(args: {
 
   return {
     rawText,
-    parsedOutput: extractStructuredOutput(rawText),
+    parsedOutput: tryExtractStructuredOutput(rawText),
     finishReason: extractFinishReason(events),
     forwardedModel: args.model,
     sessionId: extractSessionId(events),
@@ -243,33 +241,16 @@ function extractUsage(events: OpenCodeEvent[]): ModelResponse["usage"] {
 }
 
 function extractStructuredOutput(rawText: string): { files: Record<string, string> } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`OpenCode returned invalid JSON: ${message}`);
+  const parsed = tryParseFileMapOutputFromText(rawText);
+  if (!parsed) {
+    throw new Error("OpenCode returned invalid file-map JSON.");
   }
 
-  if (!parsed || typeof parsed !== "object" || !("files" in parsed)) {
-    throw new Error("OpenCode did not return a files map.");
-  }
+  return parsed;
+}
 
-  const candidate = (parsed as { files?: unknown }).files;
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-    throw new Error("OpenCode returned a malformed files map.");
-  }
-
-  const files: Record<string, string> = {};
-  for (const [relativePath, content] of Object.entries(candidate)) {
-    if (typeof content !== "string") {
-      throw new Error(`OpenCode returned a non-string file body for "${relativePath}".`);
-    }
-
-    files[relativePath] = content;
-  }
-
-  return { files };
+function tryExtractStructuredOutput(rawText: string): { files: Record<string, string> } | undefined {
+  return tryParseFileMapOutputFromText(rawText);
 }
 
 function formatStderr(stderr: string): string {

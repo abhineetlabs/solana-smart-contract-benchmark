@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { readTaskPrompt } from "../../core/src/index.js";
 import type { TaskDescriptor, TaskTrackDescriptor } from "../../core/src/index.js";
-import { listRelativeFiles, pathExists, readTextFile } from "../../shared/src/index.js";
+import { FILE_MAP_OUTPUT_FORMAT_LINES, listRelativeFiles, pathExists, readTextFile } from "../../shared/src/index.js";
 
 export interface PromptRenderInput {
   task: TaskDescriptor;
@@ -79,8 +79,7 @@ export async function renderPrompt(input: PromptRenderInput): Promise<string> {
   }
 
   promptSections.push("## Output Format");
-  promptSections.push('Return strict JSON matching: {"files": {"relative/path": "<full file content>"}}');
-  promptSections.push("Do not wrap the JSON in markdown fences or add prose before/after it. The first character must be '{' and the last must be '}'.");
+  promptSections.push(...FILE_MAP_OUTPUT_FORMAT_LINES);
 
   return `${promptSections.join("\n\n")}\n`;
 }

@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const CODEX_PREFIX = "codex/";
@@ -281,7 +282,7 @@ function parseCodexEvents(stdout: string): CodexCliEvent[] {
 function extractStructuredOutput(rawText: string): { files: Record<string, string> } {
   let parsed: CodexStructuredOutput;
   try {
-    parsed = JSON.parse(rawText) as CodexStructuredOutput;
+    parsed = parseBenchmarkJsonFromText(rawText) as CodexStructuredOutput;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Codex CLI returned invalid JSON: ${message}`);

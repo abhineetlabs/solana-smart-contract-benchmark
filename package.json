@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "benchmark": "./benchmark",
+    "check:structured-output": "node --import tsx ./scripts/check-structured-output.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "validate": "./benchmark validate",
     "list:tasks": "./benchmark list tasks",
