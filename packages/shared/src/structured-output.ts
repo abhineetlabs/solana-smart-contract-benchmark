@@ -99,9 +99,31 @@ function buildBenchmarkJsonCandidates(rawText: string): string[] {
   const exactTildeFenceMatch = trimmed.match(/^~~~(?:json)?\s*([\s\S]*?)\s*~~~$/i);
   pushCandidate(exactTildeFenceMatch?.[1]);
 
+  pushCandidate(stripLeadingFenceHeader(trimmed, "```"));
+  pushCandidate(stripLeadingFenceHeader(trimmed, "~~~"));
+
   return candidates;
 }
 
 function stripBom(value: string): string {
   return value.replace(/^\uFEFF/, "");
+}
+
+function stripLeadingFenceHeader(value: string, marker: "```" | "~~~"): string | undefined {
+  if (!value.startsWith(marker)) {
+    return undefined;
+  }
+
+  const newlineIndex = value.indexOf("\n");
+  if (newlineIndex === -1) {
+    return undefined;
+  }
+
+  const header = value.slice(0, newlineIndex).trim();
+  const language = header.slice(marker.length).trim().toLowerCase();
+  if (language !== "" && language !== "json") {
+    return undefined;
+  }
+
+  return value.slice(newlineIndex + 1);
 }

@@ -36,6 +36,11 @@ const cases: ParseCase[] = [
     shouldPass: true,
   },
   {
+    name: "opening json fence without closing fence",
+    rawText: `\`\`\`json\n${validFileMap}`,
+    shouldPass: true,
+  },
+  {
     name: "extra top-level key is rejected",
     rawText: JSON.stringify({
       files: {
