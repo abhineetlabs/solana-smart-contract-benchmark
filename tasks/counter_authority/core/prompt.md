@@ -1,4 +1,4 @@
-Implement the Anchor program logic in the editable file only.
+Implement the program logic in the editable file only.
 
 Keep the account model simple and explicit:
 

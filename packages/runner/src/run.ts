@@ -765,7 +765,54 @@ function parseAndValidateModelOutput(modelResponse: ModelResponse, track: TaskTr
 }
 
 function parseRawText(rawText: string): ParsedModelOutput {
-  return JSON.parse(rawText) as ParsedModelOutput;
+  const candidates = buildJsonParseCandidates(rawText);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as ParsedModelOutput;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error("Model output was not valid JSON.");
+}
+
+function buildJsonParseCandidates(rawText: string): string[] {
+  const trimmed = rawText.trim();
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const pushCandidate = (value: string | undefined): void => {
+    const candidate = value?.trim();
+    if (!candidate || seen.has(candidate)) {
+      return;
+    }
+
+    seen.add(candidate);
+    candidates.push(candidate);
+  };
+
+  pushCandidate(trimmed);
+
+  const exactFenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  pushCandidate(exactFenceMatch?.[1]);
+
+  const looseFenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  pushCandidate(looseFenceMatch?.[1]);
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    pushCandidate(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  return candidates;
 }
 
 async function applyModelOutput(workspaceRoot: string, output: ParsedModelOutput): Promise<void> {

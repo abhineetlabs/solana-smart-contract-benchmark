@@ -80,6 +80,7 @@ export async function renderPrompt(input: PromptRenderInput): Promise<string> {
 
   promptSections.push("## Output Format");
   promptSections.push('Return strict JSON matching: {"files": {"relative/path": "<full file content>"}}');
+  promptSections.push("Do not wrap the JSON in markdown fences or add prose before/after it. The first character must be '{' and the last must be '}'.");
 
   return `${promptSections.join("\n\n")}\n`;
 }
