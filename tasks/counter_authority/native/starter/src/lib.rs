@@ -95,9 +95,9 @@ fn store_counter(counter_info: &AccountInfo, counter: &CounterAccount) -> Progra
         .map_err(|_| ProgramError::InvalidAccountData)
 }
 
-fn next_signer<'a>(
-    account_iter: &mut std::slice::Iter<'a, AccountInfo<'a>>,
-) -> Result<&'a AccountInfo<'a>, ProgramError> {
+fn next_signer<'a, 'b>(
+    account_iter: &mut std::slice::Iter<'a, AccountInfo<'b>>,
+) -> Result<&'a AccountInfo<'b>, ProgramError> {
     let signer = next_account_info(account_iter)?;
     if !signer.is_signer {
         return Err(CounterError::MissingSignature.into());
