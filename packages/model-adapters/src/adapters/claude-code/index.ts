@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
-import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
+import type {
+  BenchmarkReasoningEffort,
+  ModelAdapter,
+  ModelRequest,
+  ModelResponse,
+} from "../../types.js";
 
 const CLAUDE_CODE_PREFIX = "claude-code/";
 const KNOWN_CLAUDE_CODE_MODELS = ["claude-code/default", "claude-code/opus", "claude-code/sonnet"] as const;
@@ -53,12 +58,14 @@ export class ClaudeCodeModelAdapter implements ModelAdapter {
 
     const invocationDir = await mkdtemp(path.join(tmpdir(), "claude-code-benchmark-"));
     const startedAt = Date.now();
+    const providerReasoningEffort = resolveClaudeCodeEffort(request.reasoningEffort);
 
     try {
       const cliResult = await invokeClaudeCode({
         model: resolveCliModelId(request.modelId),
         prompt: request.prompt,
         cwd: invocationDir,
+        reasoningEffort: providerReasoningEffort,
       });
 
       const parsedOutput = extractStructuredOutput(cliResult);
@@ -71,6 +78,8 @@ export class ClaudeCodeModelAdapter implements ModelAdapter {
         parsedOutput,
         latencyMs: cliResult.duration_ms ?? Date.now() - startedAt,
         finishReason: cliResult.stop_reason ?? "stop",
+        reasoningEffort: request.reasoningEffort ?? "default",
+        providerReasoningEffort: providerReasoningEffort ?? "default",
         usage: {
           promptTokens: inputTokens,
           completionTokens: outputTokens,
@@ -109,6 +118,7 @@ async function invokeClaudeCode(args: {
   model?: string;
   prompt: string;
   cwd: string;
+  reasoningEffort?: "low" | "medium" | "high" | "max";
 }): Promise<ClaudeCodeCliEnvelope> {
   const cliBinary = process.env.CLAUDE_BIN ?? "claude";
   const cliArgs = [
@@ -125,6 +135,10 @@ async function invokeClaudeCode(args: {
 
   if (args.model) {
     cliArgs.push("--model", args.model);
+  }
+
+  if (args.reasoningEffort) {
+    cliArgs.push("--effort", args.reasoningEffort);
   }
 
   const { stdout, stderr } = await runCliCommand({
@@ -152,6 +166,22 @@ async function invokeClaudeCode(args: {
   }
 
   return parsed;
+}
+
+function resolveClaudeCodeEffort(
+  reasoningEffort: BenchmarkReasoningEffort | undefined,
+): "low" | "medium" | "high" | "max" | undefined {
+  switch (reasoningEffort) {
+    case undefined:
+    case "default":
+      return undefined;
+    case "low":
+    case "medium":
+    case "high":
+      return reasoningEffort;
+    case "xhigh":
+      return "max";
+  }
 }
 
 async function runCliCommand(args: {

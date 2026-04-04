@@ -17,12 +17,15 @@ import {
   writeJsonFile,
   writeTextFile,
 } from "../../shared/src/index.js";
-import { getAdapterForModel } from "../../model-adapters/src/index.js";
+import {
+  getAdapterForModel,
+  type BenchmarkReasoningEffort,
+} from "../../model-adapters/src/index.js";
 import { runBenchmark, type BenchmarkExecution, type AttemptResult } from "./run.js";
 import { loadBenchmarkSuite, type BenchmarkSuite, type BenchmarkSuiteTarget } from "./suites.js";
 import { warmTaskCache } from "./warm.js";
 
-const SWEEP_REPORT_SCHEMA_VERSION = 2;
+const SWEEP_REPORT_SCHEMA_VERSION = 3;
 
 export interface BenchmarkTarget {
   taskId: string;
@@ -56,6 +59,8 @@ export interface SweepEntry {
   usage: AttemptResult["usage"];
   modelAdapter: string;
   finishReason?: string;
+  reasoningEffort: BenchmarkReasoningEffort;
+  providerReasoningEffort?: string;
   failureClasses: string[];
   benchmarkEligible: boolean;
   scoringDisposition: "scored" | "excluded_runtime";
@@ -231,6 +236,8 @@ export interface SweepReport {
   modelId: string;
   modelProvider: string;
   modelAdapter: string;
+  reasoningEffort: BenchmarkReasoningEffort;
+  providerReasoningEffort?: string;
   mode: InvocationMode;
   warmed: boolean;
   strictCapability: boolean;
@@ -250,6 +257,7 @@ interface RunBenchmarkSweepArgs {
   rootDir: string;
   modelId: string;
   mode?: InvocationMode;
+  reasoningEffort?: BenchmarkReasoningEffort;
   strictCapability?: boolean;
   runtimeRetryLimit?: number;
   onProgress?: (message: string) => void;
@@ -365,6 +373,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
   const startedAtDate = new Date();
   const startedAtMs = startedAtDate.getTime();
   const mode = args.mode ?? "offline";
+  const reasoningEffort = args.reasoningEffort ?? "default";
   const maxAttempts = args.maxAttempts ?? 1;
   const strictCapability = args.strictCapability ?? false;
   const runtimeRetryLimit = strictCapability ? Math.max(args.runtimeRetryLimit ?? 2, 0) : 0;
@@ -388,6 +397,7 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     targets,
     modelId: args.modelId,
     mode,
+    reasoningEffort,
     maxAttempts,
     strictCapability,
     runtimeRetryLimit,
@@ -406,6 +416,8 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     modelId: args.modelId,
     modelProvider: inferModelProvider(args.modelId),
     modelAdapter,
+    reasoningEffort,
+    providerReasoningEffort: inferSweepProviderReasoningEffort(entries, reasoningEffort),
     mode,
     warmed: args.warmCache ?? false,
     strictCapability,
@@ -478,6 +490,7 @@ export async function resumeBenchmarkSweep(args: ResumeBenchmarkSweepArgs): Prom
     maxAttempts: sourceReport.maxAttempts,
     strictCapability: sourceReport.strictCapability,
     runtimeRetryLimit: sourceReport.runtimeRetryLimit,
+    reasoningEffort: sourceReport.reasoningEffort,
     warmCache: args.warmCache ?? false,
     onProgress: args.onProgress,
   });
@@ -499,6 +512,12 @@ export async function resumeBenchmarkSweep(args: ResumeBenchmarkSweepArgs): Prom
     modelId: sourceReport.modelId,
     modelProvider: inferModelProvider(sourceReport.modelId),
     modelAdapter: getAdapterForModel(sourceReport.modelId).id,
+    reasoningEffort: sourceReport.reasoningEffort,
+    providerReasoningEffort: inferSweepProviderReasoningEffort(
+      mergedEntries,
+      sourceReport.reasoningEffort,
+      sourceReport.providerReasoningEffort,
+    ),
     mode: sourceReport.mode,
     warmed: args.warmCache ?? false,
     strictCapability: sourceReport.strictCapability,
@@ -588,6 +607,8 @@ function toSweepEntry(
     usage: execution.result.usage,
     modelAdapter: execution.result.model.adapterId,
     finishReason: execution.result.model.finishReason,
+    reasoningEffort: execution.result.model.reasoningEffort,
+    providerReasoningEffort: execution.result.model.providerReasoningEffort,
     failureClasses: execution.result.failureClasses,
     benchmarkEligible: isBenchmarkEligible(execution.result),
     scoringDisposition: isBenchmarkEligible(execution.result) ? "scored" : "excluded_runtime",
@@ -610,6 +631,7 @@ async function executeSweepTargets(args: {
   targets: BenchmarkTarget[];
   modelId: string;
   mode: InvocationMode;
+  reasoningEffort: BenchmarkReasoningEffort;
   maxAttempts: number;
   strictCapability: boolean;
   runtimeRetryLimit: number;
@@ -637,6 +659,7 @@ async function executeSweepTargets(args: {
       track: target.track,
       modelId: args.modelId,
       mode: args.mode,
+      reasoningEffort: args.reasoningEffort,
       interactionMode: target.interactionMode,
       maxAttempts: args.maxAttempts,
       strictCapability: args.strictCapability,
@@ -701,6 +724,10 @@ async function persistSweepReport(rootDir: string, report: SweepReport): Promise
     durationMs: report.durationMs ?? 0,
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
     modelAdapter: report.modelAdapter ?? getAdapterForModel(report.modelId).id,
+    reasoningEffort: report.reasoningEffort ?? inferSweepReasoningEffort(report.entries),
+    providerReasoningEffort:
+      report.providerReasoningEffort
+      ?? inferSweepProviderReasoningEffort(report.entries, report.reasoningEffort),
     strictCapability: report.strictCapability ?? false,
     runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     artifacts: report.artifacts ?? buildSweepArtifacts(report.sweepId),
@@ -807,6 +834,10 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
   const suiteId = report.selection?.suiteId ?? report.suiteId;
   const suite = suiteId ? await loadBenchmarkSuite(rootDir, suiteId).catch(() => undefined) : undefined;
   const modelAdapter = report.modelAdapter ?? getAdapterForModel(report.modelId).id;
+  const reasoningEffort = report.reasoningEffort ?? inferSweepReasoningEffort(report.entries);
+  const providerReasoningEffort =
+    report.providerReasoningEffort
+    ?? inferSweepProviderReasoningEffort(report.entries, reasoningEffort);
 
   const entries = await Promise.all(report.entries.map(async (entry) => {
     const task = taskMap.get(entry.taskId);
@@ -846,6 +877,11 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
       usage,
       modelAdapter: entry.modelAdapter ?? storedAttempt?.model.adapterId ?? modelAdapter,
       finishReason: entry.finishReason ?? storedAttempt?.model.finishReason,
+      reasoningEffort: entry.reasoningEffort ?? storedAttempt?.model.reasoningEffort ?? reasoningEffort,
+      providerReasoningEffort:
+        entry.providerReasoningEffort
+        ?? storedAttempt?.model.providerReasoningEffort
+        ?? providerReasoningEffort,
       benchmarkEligible,
       scoringDisposition:
         entry.scoringDisposition ?? (benchmarkEligible ? "scored" : "excluded_runtime"),
@@ -869,6 +905,8 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
     durationMs: report.durationMs ?? entries.reduce((sum, entry) => sum + entry.totalDurationMs, 0),
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
     modelAdapter,
+    reasoningEffort,
+    providerReasoningEffort,
     strictCapability: report.strictCapability ?? false,
     runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     suiteId,
@@ -1259,6 +1297,20 @@ function inferModelProvider(modelId: string): string {
   return modelId.split("/")[0] ?? "unknown";
 }
 
+function inferSweepReasoningEffort(
+  entries: Array<Pick<SweepEntry, "reasoningEffort">>,
+): BenchmarkReasoningEffort {
+  return entries[0]?.reasoningEffort ?? "default";
+}
+
+function inferSweepProviderReasoningEffort(
+  entries: Array<Pick<SweepEntry, "providerReasoningEffort">>,
+  reasoningEffort: BenchmarkReasoningEffort,
+  fallback?: string,
+): string {
+  return entries[0]?.providerReasoningEffort ?? fallback ?? reasoningEffort;
+}
+
 function renderSweepMarkdownSummary(report: SweepReport): string {
   const filters = formatSelectionFilters(report.selection);
   const categoryAggregates = aggregateSweepEntries(report.entries, (entry) => entry.category);
@@ -1284,6 +1336,7 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     `- Model: \`${report.modelId}\``,
     `- Provider: \`${report.modelProvider}\``,
     `- Adapter: \`${report.modelAdapter}\``,
+    `- Reasoning effort: \`${report.reasoningEffort}\`${report.providerReasoningEffort && report.providerReasoningEffort !== report.reasoningEffort ? ` (provider \`${report.providerReasoningEffort}\`)` : ""}`,
     `- Mode: \`${report.mode}\``,
     `- Warm-cache: ${report.warmed ? "yes" : "no"}`,
     `- Strict capability: ${report.strictCapability ? "yes" : "no"}`,

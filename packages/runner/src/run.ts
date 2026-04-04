@@ -11,7 +11,10 @@ import type {
   TaskTrackDescriptor,
 } from "../../core/src/index.js";
 import { getAdapterForModel } from "../../model-adapters/src/index.js";
-import type { ModelResponse } from "../../model-adapters/src/index.js";
+import type {
+  BenchmarkReasoningEffort,
+  ModelResponse,
+} from "../../model-adapters/src/index.js";
 import { computeAttemptScore, inferFailureClasses, type StageSummary } from "../../scoring/src/index.js";
 import {
   copyDirectory,
@@ -37,6 +40,7 @@ interface RunBenchmarkArgs {
   interactionMode?: InteractionMode;
   temperature?: number;
   maxOutputTokens?: number;
+  reasoningEffort?: BenchmarkReasoningEffort;
   maxAttempts?: number;
   strictCapability?: boolean;
   runtimeRetryLimit?: number;
@@ -72,6 +76,8 @@ export interface AttemptResult {
     finishReason?: string;
     temperature: number;
     maxOutputTokens?: number;
+    reasoningEffort: BenchmarkReasoningEffort;
+    providerReasoningEffort?: string;
   };
   prompt: {
     protocolVersion: string;
@@ -162,6 +168,7 @@ export interface BenchmarkExecution {
 export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExecution> {
   const mode = args.mode ?? "offline";
   const temperature = args.temperature ?? 0;
+  const reasoningEffort = args.reasoningEffort ?? "default";
   const maxAttempts = args.maxAttempts ?? 1;
   const strictCapability = args.strictCapability ?? false;
   const runtimeRetryLimit = strictCapability ? Math.max(args.runtimeRetryLimit ?? 2, 0) : 0;
@@ -215,6 +222,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
       prompt,
       temperature,
       maxOutputTokens: args.maxOutputTokens,
+      reasoningEffort,
       attemptNumber,
       maxAttempts,
       strictCapability,
@@ -275,6 +283,7 @@ export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExe
     modelId: args.modelId,
     mode,
     interactionMode,
+    reasoningEffort,
     strictCapability,
     runtimeRetryLimit,
     run,
@@ -300,6 +309,7 @@ async function runSingleAttempt(args: {
   prompt: string;
   temperature: number;
   maxOutputTokens?: number;
+  reasoningEffort: BenchmarkReasoningEffort;
   attemptNumber: number;
   invocationNumber: number;
   maxAttempts: number;
@@ -340,6 +350,7 @@ async function runSingleAttempt(args: {
       prompt: args.prompt,
       temperature: args.temperature,
       maxOutputTokens: args.maxOutputTokens,
+      reasoningEffort: args.reasoningEffort,
       responseFormat: "file-map-json",
       mode: args.mode,
       attemptIndex: args.attemptNumber - 1,
@@ -440,6 +451,8 @@ async function runSingleAttempt(args: {
         finishReason: modelResponse.finishReason,
         temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
+        reasoningEffort: modelResponse.reasoningEffort ?? args.reasoningEffort,
+        providerReasoningEffort: modelResponse.providerReasoningEffort,
       },
       prompt: {
         protocolVersion: "1.0.0",
@@ -516,6 +529,8 @@ async function runSingleAttempt(args: {
         finishReason: modelResponse?.finishReason,
         temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
+        reasoningEffort: modelResponse?.reasoningEffort ?? args.reasoningEffort,
+        providerReasoningEffort: modelResponse?.providerReasoningEffort,
       },
       prompt: {
         protocolVersion: "1.0.0",
@@ -871,6 +886,7 @@ async function persistRunManifest(args: {
   modelId: string;
   mode: InvocationMode;
   interactionMode: InteractionMode;
+  reasoningEffort: BenchmarkReasoningEffort;
   strictCapability: boolean;
   runtimeRetryLimit: number;
   run: BenchmarkRunSummary;
@@ -884,6 +900,7 @@ async function persistRunManifest(args: {
     modelId: args.modelId,
     mode: args.mode,
     interactionMode: args.interactionMode,
+    reasoningEffort: args.reasoningEffort,
     strictCapability: args.strictCapability,
     runtimeRetryLimit: args.runtimeRetryLimit,
     maxAttempts: args.run.maxAttempts,
@@ -911,6 +928,7 @@ async function runAttemptWithCapabilityRetries(args: {
   modelId: string;
   mode: InvocationMode;
   interactionMode: InteractionMode;
+  reasoningEffort: BenchmarkReasoningEffort;
   prompt: string;
   temperature: number;
   maxOutputTokens?: number;

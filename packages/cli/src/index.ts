@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 
 import { discoverTasks, validateAllTasks, type Difficulty } from "../../core/src/index.js";
 import { getAvailableModelIds } from "../../model-adapters/src/index.js";
+import type { BenchmarkReasoningEffort } from "../../model-adapters/src/index.js";
 import {
   listAvailableSuites,
   listBenchmarkTargets,
@@ -160,6 +161,9 @@ async function handleRun(args: string[]): Promise<void> {
       mode: {
         type: "string",
       },
+      "reasoning-effort": {
+        type: "string",
+      },
       "max-attempts": {
         type: "string",
       },
@@ -178,6 +182,7 @@ async function handleRun(args: string[]): Promise<void> {
   const track = values.track;
   const taskId = values.task;
   const mode = values.mode as "offline" | "retrieval" | undefined;
+  const reasoningEffort = parseReasoningEffortOption(values["reasoning-effort"]);
   const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
   const strictCapability = values["strict-capability"] ?? false;
   const runtimeRetryLimit = values["runtime-retries"] ? Number(values["runtime-retries"]) : 2;
@@ -200,6 +205,7 @@ async function handleRun(args: string[]): Promise<void> {
     track: track as "anchor" | "native" | "pinocchio",
     taskId,
     mode,
+    reasoningEffort,
     maxAttempts,
     strictCapability,
     runtimeRetryLimit,
@@ -207,6 +213,12 @@ async function handleRun(args: string[]): Promise<void> {
   });
 
   console.log(`Run complete: ${execution.result.attemptId}`);
+  console.log(
+    `Reasoning effort: ${formatReasoningEffortSummary(
+      execution.result.model.reasoningEffort,
+      execution.result.model.providerReasoningEffort,
+    )}`,
+  );
   console.log(`Score: ${formatScore(execution.result.score.total)}/100`);
   console.log(`Attempts: ${execution.run.attemptCount}/${execution.run.maxAttempts}`);
   console.log(
@@ -307,6 +319,9 @@ async function handleRunAll(args: string[]): Promise<void> {
       "warm-cache": {
         type: "boolean",
       },
+      "reasoning-effort": {
+        type: "string",
+      },
       "max-attempts": {
         type: "string",
       },
@@ -334,6 +349,7 @@ async function handleRunAll(args: string[]): Promise<void> {
   }
 
   const repeats = values.repeats ? Number(values.repeats) : 1;
+  const reasoningEffort = parseReasoningEffortOption(values["reasoning-effort"]);
   const maxAttempts = values["max-attempts"] ? Number(values["max-attempts"]) : 1;
   const strictCapability = values["strict-capability"] ?? false;
   const runtimeRetryLimit = values["runtime-retries"] ? Number(values["runtime-retries"]) : 2;
@@ -357,6 +373,7 @@ async function handleRunAll(args: string[]): Promise<void> {
       difficulty: values.difficulty as Difficulty | undefined,
       modelId,
       mode: values.mode as "offline" | "retrieval" | undefined,
+      reasoningEffort,
       suiteId: values.suite,
       track: values.track as "anchor" | "native" | "pinocchio" | undefined,
       taskId: values.task,
@@ -783,6 +800,7 @@ function printSweepReport(report: SweepReport): void {
   console.log(`Model: ${report.modelId}`);
   console.log(`Provider: ${report.modelProvider}`);
   console.log(`Adapter: ${report.modelAdapter}`);
+  console.log(`Reasoning effort: ${formatReasoningEffortSummary(report.reasoningEffort, report.providerReasoningEffort)}`);
   console.log(`Mode: ${report.mode}`);
   console.log(
     `Strict capability: ${report.strictCapability ? `yes (runtime retries ${report.runtimeRetryLimit})` : "no"}`,
@@ -891,13 +909,14 @@ function printSweepReport(report: SweepReport): void {
 function printSweepOverview(reports: SweepReport[]): void {
   console.log("Sweep comparison:");
   console.log(
-    formatOverviewRow(["sweep", "model", "suite", "strict", "pairs", "scored", "excluded", "green", "first", "attempts", "ttg", "avg/100"]),
+    formatOverviewRow(["sweep", "model", "effort", "suite", "strict", "pairs", "scored", "excluded", "green", "first", "attempts", "ttg", "avg/100"]),
   );
   for (const report of reports) {
     console.log(
       formatOverviewRow([
         report.sweepId,
         report.modelId,
+        formatReasoningEffortCompact(report.reasoningEffort, report.providerReasoningEffort),
         report.suiteId ?? "-",
         report.strictCapability ? `yes/${report.runtimeRetryLimit}` : "no",
         String(report.summary.totalTargets),
@@ -983,7 +1002,7 @@ function formatSelectionFilters(report: SweepReport): string {
 }
 
 function formatOverviewRow(values: string[]): string {
-  const widths = [32, 20, 20, 8, 6, 8, 9, 8, 8, 9, 8, 8];
+  const widths = [32, 20, 10, 20, 8, 6, 8, 9, 8, 8, 9, 8, 8];
   return formatRow(values, widths);
 }
 
@@ -1204,9 +1223,10 @@ function printFailureSection(entries: SweepEntry[]): void {
 function printModelAggregateSection(reports: SweepReport[]): void {
   const byModel = new Map<string, SweepEntry[]>();
   for (const report of reports) {
-    const bucket = byModel.get(report.modelId) ?? [];
+    const aggregateKey = `${report.modelId} [${formatReasoningEffortCompact(report.reasoningEffort, report.providerReasoningEffort)}]`;
+    const bucket = byModel.get(aggregateKey) ?? [];
     bucket.push(...report.entries);
-    byModel.set(report.modelId, bucket);
+    byModel.set(aggregateKey, bucket);
   }
 
   console.log("Model aggregates:");
@@ -1314,8 +1334,8 @@ function printHelp(): void {
   benchmark list tasks
   benchmark list models
   benchmark list suites
-  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
+  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--reasoning-effort default|low|medium|high|xhigh] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--reasoning-effort default|low|medium|high|xhigh] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
   benchmark resume-sweep [<sweep-id> | --latest] [--retry-benchmark-faults] [--retry-stage <stage[,stage...]>] [--retry-target <task/track[,task/track...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
@@ -1385,6 +1405,53 @@ function parseRetryTargetKeys(value: string | undefined): string[] {
 
     return `${taskId}/${track}`;
   });
+}
+
+function parseReasoningEffortOption(value: string | undefined): BenchmarkReasoningEffort | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "max") {
+    return "xhigh";
+  }
+
+  if (
+    normalized === "default"
+    || normalized === "low"
+    || normalized === "medium"
+    || normalized === "high"
+    || normalized === "xhigh"
+  ) {
+    return normalized;
+  }
+
+  throw new Error(
+    `Invalid --reasoning-effort value: ${value}. Expected default, low, medium, high, xhigh, or max.`,
+  );
+}
+
+function formatReasoningEffortSummary(
+  reasoningEffort: BenchmarkReasoningEffort,
+  providerReasoningEffort?: string,
+): string {
+  if (!providerReasoningEffort || providerReasoningEffort === reasoningEffort) {
+    return reasoningEffort;
+  }
+
+  return `${reasoningEffort} (provider ${providerReasoningEffort})`;
+}
+
+function formatReasoningEffortCompact(
+  reasoningEffort: BenchmarkReasoningEffort,
+  providerReasoningEffort?: string,
+): string {
+  if (!providerReasoningEffort || providerReasoningEffort === reasoningEffort) {
+    return reasoningEffort;
+  }
+
+  return `${reasoningEffort}/${providerReasoningEffort}`;
 }
 
 function isValidTrackId(value: string): value is "anchor" | "native" | "pinocchio" {

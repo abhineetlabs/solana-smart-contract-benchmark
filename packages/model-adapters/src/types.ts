@@ -1,4 +1,5 @@
 export type ModelInvocationMode = "offline" | "retrieval";
+export type BenchmarkReasoningEffort = "default" | "low" | "medium" | "high" | "xhigh";
 
 export interface RetrievedChunk {
   documentId: string;
@@ -12,6 +13,7 @@ export interface ModelRequest {
   systemPrompt?: string;
   temperature: number;
   maxOutputTokens?: number;
+  reasoningEffort?: BenchmarkReasoningEffort;
   responseFormat: "file-map-json";
   mode: ModelInvocationMode;
   retrievalContext?: RetrievedChunk[];
@@ -32,6 +34,8 @@ export interface ModelResponse {
   };
   latencyMs: number;
   finishReason?: string;
+  reasoningEffort?: BenchmarkReasoningEffort;
+  providerReasoningEffort?: string;
   providerMetadata?: Record<string, unknown>;
 }
 

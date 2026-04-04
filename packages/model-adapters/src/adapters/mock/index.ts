@@ -41,6 +41,8 @@ export class MockModelAdapter implements ModelAdapter {
       parsedOutput: { files },
       latencyMs: Date.now() - startedAt,
       finishReason: "stop",
+      reasoningEffort: request.reasoningEffort ?? "default",
+      providerReasoningEffort: request.reasoningEffort ?? "default",
       usage: {
         promptTokens: Math.ceil(request.prompt.length / 4),
         completionTokens: Math.ceil(rawText.length / 4),

@@ -42,6 +42,12 @@ export class OpenCodeModelAdapter implements ModelAdapter {
       throw new Error(`Unsupported OpenCode model id: ${request.modelId}`);
     }
 
+    if (request.reasoningEffort && request.reasoningEffort !== "default") {
+      throw new Error(
+        `OpenCode adapter does not support configurable reasoning effort. Remove --reasoning-effort or use a supported adapter.`,
+      );
+    }
+
     const invocationDir = await mkdtemp(path.join(tmpdir(), "opencode-benchmark-"));
     const startedAt = Date.now();
 
@@ -57,6 +63,8 @@ export class OpenCodeModelAdapter implements ModelAdapter {
         parsedOutput: cliResult.parsedOutput,
         latencyMs: Date.now() - startedAt,
         finishReason: cliResult.finishReason ?? "stop",
+        reasoningEffort: request.reasoningEffort ?? "default",
+        providerReasoningEffort: "default",
         usage: cliResult.usage,
         providerMetadata: {
           provider: "opencode",

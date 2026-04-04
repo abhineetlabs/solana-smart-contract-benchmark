@@ -90,8 +90,8 @@ If your goal is a pure model benchmark rather than a provider reliability benchm
 Recommended pure-capability commands:
 
 ```bash
-./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
-./benchmark run-all --model codex/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --reasoning-effort high --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex/default --suite personal_ranking_v1 --reasoning-effort xhigh --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark run-all --model gemini/default --suite personal_ranking_v1 --max-attempts 2 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark compare --suite personal_ranking_v1
 ```
@@ -99,13 +99,51 @@ Recommended pure-capability commands:
 For a single public cross-model leaderboard score, prefer:
 
 ```bash
-./benchmark run-all --model claude-code/sonnet --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
-./benchmark run-all --model codex/default --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model claude-code/sonnet --suite leaderboard_v1 --reasoning-effort xhigh --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+./benchmark run-all --model codex/default --suite leaderboard_v1 --reasoning-effort xhigh --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark run-all --model gemini/default --suite leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
 ./benchmark compare --suite leaderboard_v1
 ```
 
 For top-end frontier ranking, keep a private suite under `configs/suites/private/` that mixes the public matrix with multiple unpublished holdouts from `tasks-private/`. This gives you a shared public scorecard plus a harder internal leaderboard that is less likely to saturate.
+
+## Reasoning Effort
+
+`run` and `run-all` accept:
+
+```bash
+--reasoning-effort default|low|medium|high|xhigh
+```
+
+- `default` means the benchmark does not override the provider CLI's default reasoning behavior.
+- `low`, `medium`, `high`, and `xhigh` are benchmark-level settings recorded in run and sweep artifacts.
+- `max` is accepted as a CLI alias and normalized to `xhigh`.
+
+Current adapter behavior:
+
+- Claude Code supports benchmark effort control.
+  - The benchmark maps `low|medium|high` directly to `claude --effort`.
+  - Benchmark `xhigh` maps to Claude CLI `--effort max`.
+- Codex and Codex OSS support benchmark effort control.
+  - The benchmark maps `low|medium|high|xhigh` to Codex CLI `-c model_reasoning_effort="..."`.
+- Gemini and OpenCode do not currently expose a benchmark-integrated effort control in this repo.
+  - Passing `--reasoning-effort` to those adapters will fail fast instead of silently ignoring the setting.
+
+Artifacts persist both the normalized benchmark setting and the provider-applied setting:
+
+- per-attempt `result.json`
+  - `model.reasoningEffort`
+  - `model.providerReasoningEffort`
+- per-sweep `results/sweeps/<sweep-id>.json`
+  - `reasoningEffort`
+  - `providerReasoningEffort`
+
+Examples:
+
+```bash
+./benchmark run --model claude-code/opus --reasoning-effort xhigh --track native --task counter_authority
+./benchmark run-all --model codex/default --reasoning-effort medium --suite frontier_leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
+```
 
 ## Storage and Cleanup
 
@@ -278,7 +316,7 @@ Inspect the latest saved sweep report:
 
 Each sweep now writes two report artifacts under `results/sweeps/`:
 
-- `<sweep-id>.json`: machine-readable report with schema version, model/provider/adapter ids, suite fingerprint, environment/toolchain snapshot, usage and reliability summaries, breakdowns by source/track/difficulty/mode/category, and per-pair details
+- `<sweep-id>.json`: machine-readable report with schema version, model/provider/adapter ids, reasoning effort metadata, suite fingerprint, environment/toolchain snapshot, usage and reliability summaries, breakdowns by source/track/difficulty/mode/category, and per-pair details
 - `<sweep-id>.md`: human-readable summary with metadata, headline metrics, pair tables, aggregates, and failure hotspots
 
 Resume only the benchmark-caused failures from a prior sweep instead of rerunning the full suite:

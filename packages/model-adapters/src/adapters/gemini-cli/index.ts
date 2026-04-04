@@ -37,6 +37,12 @@ export class GeminiCliModelAdapter implements ModelAdapter {
       throw new Error(`Unsupported Gemini model id: ${request.modelId}`);
     }
 
+    if (request.reasoningEffort && request.reasoningEffort !== "default") {
+      throw new Error(
+        `Gemini CLI adapter does not support configurable reasoning effort. Remove --reasoning-effort or use a supported adapter.`,
+      );
+    }
+
     const invocationDir = await mkdtemp(path.join(tmpdir(), "gemini-cli-benchmark-"));
     const invocationId = path.basename(invocationDir);
     const geminiHistoryDir = path.join(homedir(), ".gemini", "history", invocationId);
@@ -57,6 +63,8 @@ export class GeminiCliModelAdapter implements ModelAdapter {
         parsedOutput: tryExtractStructuredOutput(cliResult.rawText),
         latencyMs: Date.now() - startedAt,
         finishReason: "stop",
+        reasoningEffort: request.reasoningEffort ?? "default",
+        providerReasoningEffort: "default",
         usage: extractUsage(cliResult.output),
         providerMetadata: {
           provider: "gemini-cli",

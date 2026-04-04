@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
-import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
+import type {
+  BenchmarkReasoningEffort,
+  ModelAdapter,
+  ModelRequest,
+  ModelResponse,
+} from "../../types.js";
 
 const CODEX_PREFIX = "codex/";
 const CODEX_OSS_PREFIX = "codex-oss/";
@@ -85,12 +90,14 @@ export class CodexCliModelAdapter implements ModelAdapter {
     const config = resolveInvocationConfig(request.modelId);
     const invocationDir = await mkdtemp(path.join(tmpdir(), "codex-cli-benchmark-"));
     const startedAt = Date.now();
+    const providerReasoningEffort = resolveCodexReasoningEffort(request.reasoningEffort);
 
     try {
       const cliResult = await invokeCodexCli({
         ...config,
         cwd: invocationDir,
         prompt: request.prompt,
+        reasoningEffort: providerReasoningEffort,
       });
 
       return {
@@ -98,6 +105,8 @@ export class CodexCliModelAdapter implements ModelAdapter {
         parsedOutput: cliResult.parsedOutput,
         latencyMs: Date.now() - startedAt,
         finishReason: "stop",
+        reasoningEffort: request.reasoningEffort ?? "default",
+        providerReasoningEffort: providerReasoningEffort ?? "default",
         usage: cliResult.usage,
         providerMetadata: {
           provider: "codex-cli",
@@ -143,7 +152,13 @@ function resolveInvocationConfig(modelId: string): CodexInvocationConfig {
   throw new Error(`Unsupported Codex model id: ${modelId}`);
 }
 
-async function invokeCodexCli(args: CodexInvocationConfig & { cwd: string; prompt: string }): Promise<CodexCliEnvelope> {
+async function invokeCodexCli(
+  args: CodexInvocationConfig & {
+    cwd: string;
+    prompt: string;
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  },
+): Promise<CodexCliEnvelope> {
   const cliBinary = process.env.CODEX_BIN ?? "codex";
   const schemaPath = path.join(args.cwd, "codex-output-schema.json");
   const outputPath = path.join(args.cwd, "codex-output.json");
@@ -174,6 +189,10 @@ async function invokeCodexCli(args: CodexInvocationConfig & { cwd: string; promp
     cliArgs.push("--model", args.model);
   }
 
+  if (args.reasoningEffort) {
+    cliArgs.push("-c", `model_reasoning_effort="${args.reasoningEffort}"`);
+  }
+
   cliArgs.push(args.prompt);
 
   const { stdout, stderr } = await runCliCommand({
@@ -200,6 +219,21 @@ async function invokeCodexCli(args: CodexInvocationConfig & { cwd: string; promp
       threadId: extractThreadId(events),
     },
   };
+}
+
+function resolveCodexReasoningEffort(
+  reasoningEffort: BenchmarkReasoningEffort | undefined,
+): "low" | "medium" | "high" | "xhigh" | undefined {
+  switch (reasoningEffort) {
+    case undefined:
+    case "default":
+      return undefined;
+    case "low":
+    case "medium":
+    case "high":
+    case "xhigh":
+      return reasoningEffort;
+  }
 }
 
 async function readStructuredOutput(args: { outputPath: string; events: CodexCliEvent[] }): Promise<string> {
