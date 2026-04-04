@@ -1022,11 +1022,12 @@ Both are ignored by git by default, and the loader now discovers them automatica
 ## Current Limitations
 
 - retrieval mode is not implemented yet
-- there is not yet a richer leaderboard-style or HTML reporting layer
-- only three native tasks are implemented so far, and both `escrow_basic/native` and `vault_basic/native` currently validate pre-created custody token accounts instead of creating them inside the program
+- the benchmark has solid CLI, JSON, and Markdown reporting, but there is not yet a dedicated HTML or web leaderboard/dashboard
+- public native coverage is still light: the public task pool has three native pairs, while stronger native discrimination currently comes mostly from private holdouts; `escrow_basic/native` and `vault_basic/native` intentionally validate pre-created custody token accounts instead of creating them inside the program
 - repair retries currently feed back benchmark failure details into the next attempt, which is useful for personal workflow selection but should not be treated as a contamination-resistant public benchmark mode
 - Claude Code runs depend on a local authenticated `claude` CLI session
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
 - Gemini runs depend on a local authenticated `gemini` CLI session, and offline benchmark invocations will fail if Gemini uses any tools during the run
 - OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal
+- explicit `--reasoning-effort` control is currently implemented only for Claude Code and Codex-family adapters
 - ranking-suite runs should stay sequential; overlapping Anchor/localnet-backed sweeps can interfere with each other
