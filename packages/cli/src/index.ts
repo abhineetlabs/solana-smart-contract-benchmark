@@ -691,16 +691,32 @@ async function handleCompare(args: string[]): Promise<void> {
 
 function printSweepReport(report: SweepReport): void {
   console.log(`Sweep: ${report.sweepId}`);
+  console.log(`Schema: v${report.schemaVersion}`);
+  console.log(`Started: ${report.startedAt}`);
+  console.log(`Ended: ${report.endedAt}`);
+  console.log(`Duration: ${formatDurationMs(report.durationMs)}`);
   console.log(`Model: ${report.modelId}`);
   console.log(`Provider: ${report.modelProvider}`);
+  console.log(`Adapter: ${report.modelAdapter}`);
   console.log(`Mode: ${report.mode}`);
   console.log(
     `Strict capability: ${report.strictCapability ? `yes (runtime retries ${report.runtimeRetryLimit})` : "no"}`,
   );
+  if (report.environment?.benchmarkCommit) {
+    console.log(
+      `Benchmark commit: ${report.environment.benchmarkCommit}${report.environment.benchmarkDirty !== undefined ? ` (${report.environment.benchmarkDirty ? "dirty" : "clean"})` : ""}`,
+    );
+  }
+  if (report.environment?.toolchain) {
+    console.log(`Toolchain: ${formatToolchainSummary(report.environment.toolchain)}`);
+  }
   if (report.suiteId) {
     console.log(
       `Suite: ${report.suiteId}${report.selection.suiteTitle ? ` (${report.selection.suiteTitle})` : ""}`,
     );
+  }
+  if (report.suite?.fingerprint) {
+    console.log(`Suite fingerprint: ${report.suite.fingerprint}`);
   }
   const filters = formatSelectionFilters(report);
   if (filters !== "-") {
@@ -713,6 +729,11 @@ function printSweepReport(report: SweepReport): void {
   );
   console.log(
     `Task sources: public ${report.summary.byTaskSource.public.scoredTargets}/${report.summary.byTaskSource.public.totalTargets}, holdout ${report.summary.byTaskSource.holdout.scoredTargets}/${report.summary.byTaskSource.holdout.totalTargets}`,
+  );
+  console.log(`Usage: ${formatUsageSummary(report.summary.usage)}`);
+  console.log(`Reliability: ${formatReliabilitySummary(report.summary.reliability)}`);
+  console.log(
+    `Slices: ${formatBreakdownScores(report.summary.breakdowns.byTrack, ["anchor", "native", "pinocchio"])} | ${formatBreakdownScores(report.summary.breakdowns.byInteractionMode, ["generate", "repair", "migrate"])}`,
   );
   console.log("Pairs:");
   console.log(
@@ -761,6 +782,8 @@ function printSweepReport(report: SweepReport): void {
   }
   printAggregateSection("By category", aggregateEntries(report.entries, (entry) => entry.category));
   printAggregateSection("By track", aggregateEntries(report.entries, (entry) => entry.track));
+  printAggregateSection("By difficulty", aggregateEntries(report.entries, (entry) => entry.difficulty));
+  printAggregateSection("By mode", aggregateEntries(report.entries, (entry) => entry.interactionMode));
   printAggregateSection("By source", aggregateEntries(report.entries, (entry) => entry.taskSource));
   printFailureSection(report.entries);
   console.log(`Report JSON: ${report.artifacts.jsonReportPath}`);
@@ -913,6 +936,81 @@ function formatDurationMs(value: number | undefined): string {
   }
 
   return `${(value / 1000).toFixed(1)}s`;
+}
+
+function formatToolchainSummary(toolchain: Record<string, string | null>): string {
+  return Object.entries(toolchain)
+    .map(([key, value]) => `${key}=${value ?? "unknown"}`)
+    .sort()
+    .join(", ");
+}
+
+function formatUsageSummary(summary: SweepReport["summary"]["usage"]): string {
+  const parts = [
+    `latency ${formatDurationMs(summary.latencyMs)}`,
+    `avg latency ${formatDurationMs(summary.averageLatencyMs)}`,
+    summary.totalTokens !== undefined ? `tokens ${Math.round(summary.totalTokens)}` : undefined,
+    summary.averageTotalTokensPerEntry !== undefined
+      ? `avg tokens/entry ${Math.round(summary.averageTotalTokensPerEntry)}`
+      : undefined,
+    summary.estimatedCostUsd !== undefined ? `cost ${formatUsd(summary.estimatedCostUsd)}` : undefined,
+    `usage entries ${summary.entriesWithUsage}`,
+  ].filter((value): value is string => value !== undefined);
+
+  return parts.join(", ");
+}
+
+function formatReliabilitySummary(summary: SweepReport["summary"]["reliability"]): string {
+  return [
+    summary.fullSweepCompleted ? "full sweep complete" : "runtime exclusions present",
+    `invokes ${summary.totalInvocations}`,
+    `avg invokes ${formatAttempts(summary.averageInvocationAttempts)}`,
+    `retry-free ${formatPercent(summary.retryFreeTargetRate)}`,
+    `scored ${formatPercent(summary.scoredTargetRate)}`,
+    `green ${formatPercent(summary.greenTargetRate)}`,
+    `first-pass ${formatPercent(summary.firstPassGreenTargetRate)}`,
+  ].join(", ");
+}
+
+function formatBreakdownScores(
+  breakdown: Record<string, { averageScore: number }>,
+  orderedKeys: string[],
+): string {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+
+  for (const key of orderedKeys) {
+    const summary = breakdown[key];
+    if (!summary) {
+      continue;
+    }
+
+    parts.push(`${key} ${formatScore(summary.averageScore)}/100`);
+    seen.add(key);
+  }
+
+  for (const key of Object.keys(breakdown).sort()) {
+    if (seen.has(key)) {
+      continue;
+    }
+
+    const summary = breakdown[key];
+    if (!summary) {
+      continue;
+    }
+
+    parts.push(`${key} ${formatScore(summary.averageScore)}/100`);
+  }
+
+  return parts.length > 0 ? parts.join(", ") : "-";
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(4)}`;
 }
 
 function formatInvocationSummary(entry: Pick<SweepEntry, "invocationAttempts" | "runtimeRetriesUsed">): string {

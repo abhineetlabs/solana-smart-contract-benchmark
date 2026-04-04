@@ -13,12 +13,16 @@ import {
   ensureDir,
   pathExists,
   readJsonFile,
+  runCommand,
   writeJsonFile,
   writeTextFile,
 } from "../../shared/src/index.js";
+import { getAdapterForModel } from "../../model-adapters/src/index.js";
 import { runBenchmark, type BenchmarkExecution, type AttemptResult } from "./run.js";
 import { loadBenchmarkSuite, type BenchmarkSuite, type BenchmarkSuiteTarget } from "./suites.js";
 import { warmTaskCache } from "./warm.js";
+
+const SWEEP_REPORT_SCHEMA_VERSION = 2;
 
 export interface BenchmarkTarget {
   taskId: string;
@@ -33,6 +37,7 @@ export interface BenchmarkTarget {
 
 export interface SweepEntry {
   taskId: string;
+  taskVersion: string;
   track: TrackId;
   category: string;
   difficulty: Difficulty;
@@ -45,8 +50,12 @@ export interface SweepEntry {
   status: AttemptResult["status"];
   errorStage?: string;
   score: number;
+  scoreBreakdown: AttemptResult["score"]["breakdown"];
   buildSuccess: boolean;
   tests: AttemptResult["tests"];
+  usage: AttemptResult["usage"];
+  modelAdapter: string;
+  finishReason?: string;
   failureClasses: string[];
   benchmarkEligible: boolean;
   scoringDisposition: "scored" | "excluded_runtime";
@@ -70,6 +79,97 @@ export interface SweepTaskSourceSummary {
   scoredWeight: number;
   runtimeExcludedTargets: number;
   runtimeExcludedWeight: number;
+  buildPassedTargets: number;
+  greenTargets: number;
+  firstPassGreenTargets: number;
+  averageScore: number;
+  averageAttemptsUsed: number;
+  averageTimeToGreenMs?: number;
+  publicPassed: number;
+  publicTotal: number;
+  hiddenPassed: number;
+  hiddenTotal: number;
+  adversarialPassed: number;
+  adversarialTotal: number;
+}
+
+export interface SweepAggregateSummary {
+  totalTargets: number;
+  totalWeight: number;
+  scoredTargets: number;
+  scoredWeight: number;
+  runtimeExcludedTargets: number;
+  runtimeExcludedWeight: number;
+  buildPassedTargets: number;
+  greenTargets: number;
+  firstPassGreenTargets: number;
+  averageScore: number;
+  averageAttemptsUsed: number;
+  averageTimeToGreenMs?: number;
+  publicPassed: number;
+  publicTotal: number;
+  hiddenPassed: number;
+  hiddenTotal: number;
+  adversarialPassed: number;
+  adversarialTotal: number;
+}
+
+export interface SweepUsageSummary {
+  entriesWithUsage: number;
+  entriesWithTokenUsage: number;
+  entriesWithCost: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  estimatedCostUsd?: number;
+  latencyMs: number;
+  averageLatencyMs: number;
+  averageTotalTokensPerEntry?: number;
+  averageTotalTokensPerScoredTarget?: number;
+}
+
+export interface SweepReliabilitySummary {
+  fullSweepCompleted: boolean;
+  totalInvocations: number;
+  runtimeRetriesUsed: number;
+  averageInvocationAttempts: number;
+  retryFreeTargets: number;
+  retryFreeTargetRate: number;
+  scoredTargetRate: number;
+  runtimeExclusionRate: number;
+  greenTargetRate: number;
+  firstPassGreenTargetRate: number;
+  buildPassTargetRate: number;
+}
+
+export interface SweepSummaryBreakdowns {
+  byTaskSource: Record<string, SweepAggregateSummary>;
+  byTrack: Record<string, SweepAggregateSummary>;
+  byDifficulty: Record<string, SweepAggregateSummary>;
+  byInteractionMode: Record<string, SweepAggregateSummary>;
+  byCategory: Record<string, SweepAggregateSummary>;
+}
+
+export interface SweepEnvironment {
+  benchmarkCommit?: string;
+  benchmarkDirty?: boolean;
+  platform?: string;
+  arch?: string;
+  nodeVersion?: string;
+  toolchain?: Record<string, string | null>;
+}
+
+export interface SweepSuiteMetadata {
+  id: string;
+  title: string;
+  description: string;
+  tags: string[];
+  sourcePath?: string;
+  relativeId?: string;
+  fingerprint?: string;
+  targetCount: number;
+  selectedTargetCount: number;
+  configuredTotalWeight: number;
 }
 
 export interface SweepSummary {
@@ -91,6 +191,9 @@ export interface SweepSummary {
     public: SweepTaskSourceSummary;
     holdout: SweepTaskSourceSummary;
   };
+  usage: SweepUsageSummary;
+  reliability: SweepReliabilitySummary;
+  breakdowns: SweepSummaryBreakdowns;
 }
 
 export interface SweepSelection {
@@ -107,15 +210,22 @@ export interface SweepArtifacts {
 }
 
 export interface SweepReport {
+  schemaVersion: number;
   sweepId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
   createdAt: string;
   modelId: string;
   modelProvider: string;
+  modelAdapter: string;
   mode: InvocationMode;
   warmed: boolean;
   strictCapability: boolean;
   runtimeRetryLimit: number;
   suiteId?: string;
+  suite?: SweepSuiteMetadata;
+  environment?: SweepEnvironment;
   selection: SweepSelection;
   maxAttempts: number;
   artifacts: SweepArtifacts;
@@ -229,11 +339,14 @@ export async function listBenchmarkTargets(args: {
 }
 
 export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<SweepReport> {
+  const startedAtDate = new Date();
+  const startedAtMs = startedAtDate.getTime();
   const mode = args.mode ?? "offline";
   const maxAttempts = args.maxAttempts ?? 1;
   const strictCapability = args.strictCapability ?? false;
   const runtimeRetryLimit = strictCapability ? Math.max(args.runtimeRetryLimit ?? 2, 0) : 0;
   const suite = args.suiteId ? await loadBenchmarkSuite(args.rootDir, args.suiteId) : undefined;
+  const modelAdapter = getAdapterForModel(args.modelId).id;
   const targets = await listBenchmarkTargets({
     rootDir: args.rootDir,
     suiteId: args.suiteId,
@@ -282,16 +395,26 @@ export async function runBenchmarkSweep(args: RunBenchmarkSweepArgs): Promise<Sw
     );
   }
 
+  const endedAtDate = new Date();
   const report: SweepReport = {
+    schemaVersion: SWEEP_REPORT_SCHEMA_VERSION,
     sweepId,
-    createdAt: new Date().toISOString(),
+    startedAt: startedAtDate.toISOString(),
+    endedAt: endedAtDate.toISOString(),
+    durationMs: endedAtDate.getTime() - startedAtMs,
+    createdAt: endedAtDate.toISOString(),
     modelId: args.modelId,
     modelProvider: inferModelProvider(args.modelId),
+    modelAdapter,
     mode,
     warmed: args.warmCache ?? false,
     strictCapability,
     runtimeRetryLimit,
     suiteId: args.suiteId,
+    suite: suite
+      ? buildSweepSuiteMetadata(suite, targets)
+      : undefined,
+    environment: await collectSweepEnvironment(args.rootDir),
     selection: {
       suiteId: args.suiteId,
       suiteTitle: suite?.title,
@@ -350,6 +473,7 @@ function toSweepEntry(
 ): SweepEntry {
   return {
     taskId: target.taskId,
+    taskVersion: execution.result.taskVersion,
     track: target.track,
     category: target.category,
     difficulty: target.difficulty,
@@ -362,8 +486,12 @@ function toSweepEntry(
     status: execution.result.status,
     errorStage: execution.result.error?.stage,
     score: execution.result.score.total,
+    scoreBreakdown: execution.result.score.breakdown,
     buildSuccess: execution.result.build.success,
     tests: execution.result.tests,
+    usage: execution.result.usage,
+    modelAdapter: execution.result.model.adapterId,
+    finishReason: execution.result.model.finishReason,
     failureClasses: execution.result.failureClasses,
     benchmarkEligible: isBenchmarkEligible(execution.result),
     scoringDisposition: isBenchmarkEligible(execution.result) ? "scored" : "excluded_runtime",
@@ -382,46 +510,38 @@ function toSweepEntry(
 }
 
 function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
+  const overall = computeAggregateSummary(entries);
   const scoredEntries = entries.filter((entry) => entry.benchmarkEligible);
-  const runtimeExcludedEntries = entries.filter((entry) => !entry.benchmarkEligible);
   const completedTargets = scoredEntries.filter((entry) => entry.status === "completed").length;
-  const buildPassedTargets = scoredEntries.filter((entry) => entry.buildSuccess).length;
-  const totalWeight = entries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0);
-  const scoredWeight = scoredEntries.reduce(
-    (sum, entry) => sum + normalizeTargetWeight(entry.weight),
-    0,
-  );
-  const runtimeExcludedWeight = runtimeExcludedEntries.reduce(
-    (sum, entry) => sum + normalizeTargetWeight(entry.weight),
-    0,
-  );
-  const totalScore = scoredEntries.reduce(
-    (sum, entry) => sum + entry.score * normalizeTargetWeight(entry.weight),
-    0,
-  );
+  const byTaskSource = {
+    public: computeTaskSourceSummary(entries, "public"),
+    holdout: computeTaskSourceSummary(entries, "holdout"),
+  };
 
   return {
-    totalTargets: entries.length,
-    totalWeight: roundWeight(totalWeight),
-    scoredTargets: scoredEntries.length,
-    scoredWeight: roundWeight(scoredWeight),
-    runtimeExcludedTargets: runtimeExcludedEntries.length,
-    runtimeExcludedWeight: roundWeight(runtimeExcludedWeight),
+    totalTargets: overall.totalTargets,
+    totalWeight: overall.totalWeight,
+    scoredTargets: overall.scoredTargets,
+    scoredWeight: overall.scoredWeight,
+    runtimeExcludedTargets: overall.runtimeExcludedTargets,
+    runtimeExcludedWeight: overall.runtimeExcludedWeight,
     completedTargets,
     failedTargets: scoredEntries.length - completedTargets,
-    buildPassedTargets,
-    greenTargets: scoredEntries.filter((entry) => entry.reachedGreen).length,
-    firstPassGreenTargets: scoredEntries.filter((entry) => entry.firstPassGreen).length,
-    averageScore: scoredWeight === 0 ? 0 : roundScore(totalScore / scoredWeight),
-    averageAttemptsUsed: roundAttempts(weightedAverage(scoredEntries, (entry) => entry.attemptCount)),
-    averageTimeToGreenMs: weightedAverage(
-      scoredEntries,
-      (entry) => entry.timeToGreenMs,
-      (entry) => entry.reachedGreen,
-    ),
-    byTaskSource: {
-      public: computeTaskSourceSummary(entries, "public"),
-      holdout: computeTaskSourceSummary(entries, "holdout"),
+    buildPassedTargets: overall.buildPassedTargets,
+    greenTargets: overall.greenTargets,
+    firstPassGreenTargets: overall.firstPassGreenTargets,
+    averageScore: overall.averageScore,
+    averageAttemptsUsed: overall.averageAttemptsUsed,
+    averageTimeToGreenMs: overall.averageTimeToGreenMs,
+    byTaskSource,
+    usage: computeUsageSummary(entries),
+    reliability: computeReliabilitySummary(entries),
+    breakdowns: {
+      byTaskSource,
+      byTrack: computeAggregateBreakdown(entries, (entry) => entry.track),
+      byDifficulty: computeAggregateBreakdown(entries, (entry) => entry.difficulty),
+      byInteractionMode: computeAggregateBreakdown(entries, (entry) => entry.interactionMode),
+      byCategory: computeAggregateBreakdown(entries, (entry) => entry.category),
     },
   };
 }
@@ -429,7 +549,12 @@ function computeSweepSummary(entries: SweepEntry[]): SweepSummary {
 async function persistSweepReport(rootDir: string, report: SweepReport): Promise<void> {
   const normalizedReport: SweepReport = {
     ...report,
+    schemaVersion: report.schemaVersion ?? SWEEP_REPORT_SCHEMA_VERSION,
+    startedAt: report.startedAt ?? report.createdAt,
+    endedAt: report.endedAt ?? report.createdAt,
+    durationMs: report.durationMs ?? 0,
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
+    modelAdapter: report.modelAdapter ?? getAdapterForModel(report.modelId).id,
     strictCapability: report.strictCapability ?? false,
     runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     artifacts: report.artifacts ?? buildSweepArtifacts(report.sweepId),
@@ -453,6 +578,7 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const suiteId = report.selection?.suiteId ?? report.suiteId;
   const suite = suiteId ? await loadBenchmarkSuite(rootDir, suiteId).catch(() => undefined) : undefined;
+  const modelAdapter = report.modelAdapter ?? getAdapterForModel(report.modelId).id;
 
   const entries = await Promise.all(report.entries.map(async (entry) => {
     const task = taskMap.get(entry.taskId);
@@ -478,13 +604,20 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
     const storedAttempt = await loadStoredAttemptResult(rootDir, entry.resultPath);
     const errorStage = entry.errorStage ?? storedAttempt?.error?.stage;
     const benchmarkEligible = entry.benchmarkEligible ?? isBenchmarkEligibleFromStage(errorStage);
+    const usage = entry.usage ?? storedAttempt?.usage ?? { latencyMs: 0 };
+    const scoreBreakdown = entry.scoreBreakdown ?? storedAttempt?.score.breakdown ?? emptyScoreBreakdown();
 
     return {
       ...entry,
+      taskVersion: entry.taskVersion ?? storedAttempt?.taskVersion ?? task?.spec.version ?? "unknown",
       interactionMode,
       weight: normalizeTargetWeight(weight),
       taskSource,
       errorStage,
+      scoreBreakdown,
+      usage,
+      modelAdapter: entry.modelAdapter ?? storedAttempt?.model.adapterId ?? modelAdapter,
+      finishReason: entry.finishReason ?? storedAttempt?.model.finishReason,
       benchmarkEligible,
       scoringDisposition:
         entry.scoringDisposition ?? (benchmarkEligible ? "scored" : "excluded_runtime"),
@@ -502,10 +635,28 @@ async function normalizeSweepReport(rootDir: string, report: SweepReport): Promi
 
   return {
     ...report,
+    schemaVersion: report.schemaVersion ?? 1,
+    startedAt: report.startedAt ?? report.createdAt,
+    endedAt: report.endedAt ?? report.createdAt,
+    durationMs: report.durationMs ?? entries.reduce((sum, entry) => sum + entry.totalDurationMs, 0),
     modelProvider: report.modelProvider ?? inferModelProvider(report.modelId),
+    modelAdapter,
     strictCapability: report.strictCapability ?? false,
     runtimeRetryLimit: report.runtimeRetryLimit ?? 0,
     suiteId,
+    suite:
+      report.suite ??
+      (suite ? buildSweepSuiteMetadata(suite, entries.map((entry) => ({
+        taskId: entry.taskId,
+        track: entry.track,
+        category: entry.category,
+        difficulty: entry.difficulty,
+        interactionMode: entry.interactionMode,
+        title: entry.title,
+        weight: entry.weight,
+        taskSource: entry.taskSource,
+      }))) : undefined),
+    environment: report.environment,
     selection: {
       suiteId,
       suiteTitle: report.selection?.suiteTitle ?? suite?.title,
@@ -546,20 +697,163 @@ function computeTaskSourceSummary(
   entries: SweepEntry[],
   taskSource: "public" | "holdout",
 ): SweepTaskSourceSummary {
-  const sourceEntries = entries.filter((entry) => entry.taskSource === taskSource);
-  const scoredEntries = sourceEntries.filter((entry) => entry.benchmarkEligible);
-  const runtimeExcludedEntries = sourceEntries.filter((entry) => !entry.benchmarkEligible);
+  return computeAggregateSummary(entries.filter((entry) => entry.taskSource === taskSource));
+}
+
+function computeAggregateSummary(entries: SweepEntry[]): SweepAggregateSummary {
+  const scoredEntries = entries.filter((entry) => entry.benchmarkEligible);
+  const runtimeExcludedEntries = entries.filter((entry) => !entry.benchmarkEligible);
+  const totalWeight = entries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0);
+  const scoredWeight = scoredEntries.reduce(
+    (sum, entry) => sum + normalizeTargetWeight(entry.weight),
+    0,
+  );
+  const runtimeExcludedWeight = runtimeExcludedEntries.reduce(
+    (sum, entry) => sum + normalizeTargetWeight(entry.weight),
+    0,
+  );
+  const totalScore = scoredEntries.reduce(
+    (sum, entry) => sum + entry.score * normalizeTargetWeight(entry.weight),
+    0,
+  );
 
   return {
-    totalTargets: sourceEntries.length,
-    totalWeight: roundWeight(sourceEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0)),
+    totalTargets: entries.length,
+    totalWeight: roundWeight(totalWeight),
     scoredTargets: scoredEntries.length,
-    scoredWeight: roundWeight(scoredEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0)),
+    scoredWeight: roundWeight(scoredWeight),
     runtimeExcludedTargets: runtimeExcludedEntries.length,
-    runtimeExcludedWeight: roundWeight(
-      runtimeExcludedEntries.reduce((sum, entry) => sum + normalizeTargetWeight(entry.weight), 0),
+    runtimeExcludedWeight: roundWeight(runtimeExcludedWeight),
+    buildPassedTargets: scoredEntries.filter((entry) => entry.buildSuccess).length,
+    greenTargets: scoredEntries.filter((entry) => entry.reachedGreen).length,
+    firstPassGreenTargets: scoredEntries.filter((entry) => entry.firstPassGreen).length,
+    averageScore: scoredWeight === 0 ? 0 : roundScore(totalScore / scoredWeight),
+    averageAttemptsUsed: roundAttempts(weightedAverage(scoredEntries, (entry) => entry.attemptCount)),
+    averageTimeToGreenMs: weightedAverage(
+      scoredEntries,
+      (entry) => entry.timeToGreenMs,
+      (entry) => entry.reachedGreen,
+    ),
+    publicPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.public.passed, 0),
+    publicTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.public.total, 0),
+    hiddenPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.hidden.passed, 0),
+    hiddenTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.hidden.total, 0),
+    adversarialPassed: scoredEntries.reduce((sum, entry) => sum + entry.tests.adversarial.passed, 0),
+    adversarialTotal: scoredEntries.reduce((sum, entry) => sum + entry.tests.adversarial.total, 0),
+  };
+}
+
+function computeAggregateBreakdown(
+  entries: SweepEntry[],
+  keyFn: (entry: SweepEntry) => string,
+): Record<string, SweepAggregateSummary> {
+  return Object.fromEntries(
+    aggregateSweepEntries(entries, keyFn).map(({ key, entries: bucketEntries }) => [
+      key,
+      computeAggregateSummary(bucketEntries),
+    ]),
+  );
+}
+
+function computeUsageSummary(entries: SweepEntry[]): SweepUsageSummary {
+  const entriesWithUsage = entries.filter(hasMeasuredUsage);
+  const entriesWithTokenUsage = entries.filter((entry) => entry.usage.totalTokens !== undefined);
+  const scoredEntriesWithTokenUsage = entries.filter(
+    (entry) => entry.benchmarkEligible && entry.usage.totalTokens !== undefined,
+  );
+  const entriesWithCost = entries.filter((entry) => entry.usage.estimatedCostUsd !== undefined);
+
+  return {
+    entriesWithUsage: entriesWithUsage.length,
+    entriesWithTokenUsage: entriesWithTokenUsage.length,
+    entriesWithCost: entriesWithCost.length,
+    promptTokens: sumOptionalMetric(entries, (entry) => entry.usage.promptTokens),
+    completionTokens: sumOptionalMetric(entries, (entry) => entry.usage.completionTokens),
+    totalTokens: sumOptionalMetric(entries, (entry) => entry.usage.totalTokens),
+    estimatedCostUsd: sumOptionalMetric(entries, (entry) => entry.usage.estimatedCostUsd),
+    latencyMs: roundMetric(entries.reduce((sum, entry) => sum + (entry.usage.latencyMs ?? 0), 0)),
+    averageLatencyMs:
+      entries.length === 0
+        ? 0
+        : roundMetric(
+            entries.reduce((sum, entry) => sum + (entry.usage.latencyMs ?? 0), 0) / entries.length,
+          ),
+    averageTotalTokensPerEntry:
+      entriesWithTokenUsage.length === 0
+        ? undefined
+        : roundMetric(
+            entriesWithTokenUsage.reduce((sum, entry) => sum + (entry.usage.totalTokens ?? 0), 0)
+              / entriesWithTokenUsage.length,
+          ),
+    averageTotalTokensPerScoredTarget:
+      scoredEntriesWithTokenUsage.length === 0
+        ? undefined
+        : roundMetric(
+            scoredEntriesWithTokenUsage.reduce((sum, entry) => sum + (entry.usage.totalTokens ?? 0), 0)
+              / scoredEntriesWithTokenUsage.length,
+          ),
+  };
+}
+
+function computeReliabilitySummary(entries: SweepEntry[]): SweepReliabilitySummary {
+  const scoredEntries = entries.filter((entry) => entry.benchmarkEligible);
+  const retryFreeTargets = entries.filter((entry) => entry.invocationAttempts <= 1).length;
+  const totalInvocations = entries.reduce((sum, entry) => sum + entry.invocationAttempts, 0);
+  const runtimeRetriesUsed = entries.reduce((sum, entry) => sum + entry.runtimeRetriesUsed, 0);
+
+  return {
+    fullSweepCompleted: entries.every((entry) => entry.benchmarkEligible),
+    totalInvocations,
+    runtimeRetriesUsed,
+    averageInvocationAttempts:
+      entries.length === 0 ? 0 : roundAttempts(totalInvocations / entries.length),
+    retryFreeTargets,
+    retryFreeTargetRate: roundRate(retryFreeTargets, entries.length),
+    scoredTargetRate: roundRate(scoredEntries.length, entries.length),
+    runtimeExclusionRate: roundRate(entries.length - scoredEntries.length, entries.length),
+    greenTargetRate: roundRate(
+      scoredEntries.filter((entry) => entry.reachedGreen).length,
+      scoredEntries.length,
+    ),
+    firstPassGreenTargetRate: roundRate(
+      scoredEntries.filter((entry) => entry.firstPassGreen).length,
+      scoredEntries.length,
+    ),
+    buildPassTargetRate: roundRate(
+      scoredEntries.filter((entry) => entry.buildSuccess).length,
+      scoredEntries.length,
     ),
   };
+}
+
+function sumOptionalMetric(
+  entries: SweepEntry[],
+  pick: (entry: SweepEntry) => number | undefined,
+): number | undefined {
+  let found = false;
+  let total = 0;
+
+  for (const entry of entries) {
+    const value = pick(entry);
+    if (value === undefined) {
+      continue;
+    }
+
+    found = true;
+    total += value;
+  }
+
+  return found ? roundMetric(total) : undefined;
+}
+
+function hasMeasuredUsage(entry: SweepEntry): boolean {
+  return (
+    entry.usage.latencyMs > 0
+    || entry.usage.promptTokens !== undefined
+    || entry.usage.completionTokens !== undefined
+    || entry.usage.totalTokens !== undefined
+    || entry.usage.estimatedCostUsd !== undefined
+  );
 }
 
 function defaultDifficultyWeight(difficulty: Difficulty): number {
@@ -603,6 +897,68 @@ function weightedAverage(
   }
 
   return Number((weightedSum / totalWeight).toFixed(2));
+}
+
+function roundMetric(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function roundRate(numerator: number, denominator: number): number {
+  if (denominator === 0) {
+    return 0;
+  }
+
+  return roundScore(numerator / denominator);
+}
+
+function emptyScoreBreakdown(): AttemptResult["score"]["breakdown"] {
+  return {
+    build: 0,
+    public: 0,
+    hidden: 0,
+    adversarial: 0,
+    efficiency: 0,
+  };
+}
+
+function buildSweepSuiteMetadata(
+  suite: BenchmarkSuite,
+  targets: BenchmarkTarget[],
+): SweepSuiteMetadata {
+  return {
+    id: suite.id,
+    title: suite.title,
+    description: suite.description,
+    tags: [...(suite.tags ?? [])],
+    sourcePath: suite.sourcePath,
+    relativeId: suite.relativeId,
+    fingerprint: suite.fingerprint,
+    targetCount: suite.targets.length,
+    selectedTargetCount: targets.length,
+    configuredTotalWeight: roundWeight(
+      targets.reduce((sum, target) => sum + normalizeTargetWeight(target.weight), 0),
+    ),
+  };
+}
+
+async function collectSweepEnvironment(rootDir: string): Promise<SweepEnvironment> {
+  const [toolchain, gitCommitResult, gitStatusResult] = await Promise.all([
+    readJsonFile<Record<string, string | null>>(path.join(rootDir, "configs", "toolchains.json"))
+      .catch(() => undefined),
+    runCommand("git rev-parse HEAD", rootDir),
+    runCommand("git status --porcelain", rootDir),
+  ]);
+
+  return {
+    benchmarkCommit: gitCommitResult.success ? gitCommitResult.stdout.trim() || undefined : undefined,
+    benchmarkDirty: gitStatusResult.success
+      ? gitStatusResult.stdout.trim().length > 0
+      : undefined,
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.version,
+    toolchain,
+  };
 }
 
 function inferGreenFromEntry(entry: Pick<SweepEntry, "status" | "score">): boolean {
@@ -672,6 +1028,8 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
   const filters = formatSelectionFilters(report.selection);
   const categoryAggregates = aggregateSweepEntries(report.entries, (entry) => entry.category);
   const trackAggregates = aggregateSweepEntries(report.entries, (entry) => entry.track);
+  const difficultyAggregates = aggregateSweepEntries(report.entries, (entry) => entry.difficulty);
+  const interactionModeAggregates = aggregateSweepEntries(report.entries, (entry) => entry.interactionMode);
   const taskSourceAggregates = ["public", "holdout"].map((taskSource) => ({
     key: taskSource,
     entries: report.entries.filter((entry) => entry.taskSource === taskSource),
@@ -682,18 +1040,35 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     "# Benchmark Sweep Report",
     "",
     "## Metadata",
+    `- Schema version: \`${report.schemaVersion}\``,
     `- Sweep ID: \`${report.sweepId}\``,
+    `- Started: \`${report.startedAt}\``,
+    `- Ended: \`${report.endedAt}\``,
+    `- Duration: ${formatDurationMs(report.durationMs)}`,
     `- Created: \`${report.createdAt}\``,
     `- Model: \`${report.modelId}\``,
     `- Provider: \`${report.modelProvider}\``,
+    `- Adapter: \`${report.modelAdapter}\``,
     `- Mode: \`${report.mode}\``,
     `- Warm-cache: ${report.warmed ? "yes" : "no"}`,
     `- Strict capability: ${report.strictCapability ? "yes" : "no"}`,
     `- Runtime retry limit: ${report.runtimeRetryLimit}`,
     `- Max attempts: ${report.maxAttempts}`,
+    report.environment?.benchmarkCommit
+      ? `- Benchmark commit: \`${report.environment.benchmarkCommit}\`${report.environment.benchmarkDirty !== undefined ? ` (${report.environment.benchmarkDirty ? "dirty" : "clean"})` : ""}`
+      : "- Benchmark commit: -",
+    report.environment?.platform || report.environment?.arch || report.environment?.nodeVersion
+      ? `- Runtime env: \`${report.environment?.platform ?? "unknown"}\` / \`${report.environment?.arch ?? "unknown"}\` / Node \`${report.environment?.nodeVersion ?? "unknown"}\``
+      : "- Runtime env: -",
+    report.environment?.toolchain
+      ? `- Toolchain: ${formatToolchainSummary(report.environment.toolchain)}`
+      : "- Toolchain: -",
     report.selection.suiteId
       ? `- Suite: \`${report.selection.suiteId}\`${report.selection.suiteTitle ? ` (${report.selection.suiteTitle})` : ""}`
       : "- Suite: -",
+    report.suite?.fingerprint
+      ? `- Suite fingerprint: \`${report.suite.fingerprint}\``
+      : "- Suite fingerprint: -",
     `- Filters: ${filters}`,
     "",
     "## Summary",
@@ -712,6 +1087,10 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
     `- Average time-to-green: ${formatDurationMs(report.summary.averageTimeToGreenMs)}`,
     `- Public pairs: ${formatTaskSourceSummaryLine(report.summary.byTaskSource.public)}`,
     `- Holdout pairs: ${formatTaskSourceSummaryLine(report.summary.byTaskSource.holdout)}`,
+    `- Usage: ${formatUsageSummaryLine(report.summary.usage)}`,
+    `- Reliability: ${formatReliabilitySummaryLine(report.summary.reliability)}`,
+    `- Track slices: ${formatBreakdownScoreLine(report.summary.breakdowns.byTrack, ["anchor", "native", "pinocchio"])}`,
+    `- Mode slices: ${formatBreakdownScoreLine(report.summary.breakdowns.byInteractionMode, ["generate", "repair", "migrate"])}`,
     "",
     "## Pairs",
     formatMarkdownTable(
@@ -858,6 +1237,84 @@ function renderSweepMarkdownSummary(report: SweepReport): string {
         "Avg/100",
       ],
       trackAggregates.map(({ key, entries }) => {
+        const summary = summarizeSweepEntries(entries);
+        return [
+          key,
+          String(summary.pairs),
+          String(summary.scoredTargets),
+          String(summary.runtimeExcludedTargets),
+          formatWeight(summary.totalWeight),
+          formatStageRatio(summary.greenTargets, summary.scoredTargets),
+          formatStageRatio(summary.firstPassGreenTargets, summary.scoredTargets),
+          formatAttempts(summary.averageAttemptsUsed),
+          formatDurationMs(summary.averageTimeToGreenMs),
+          formatStageRatio(summary.buildPassed, summary.scoredTargets),
+          formatStageRatio(summary.publicPassed, summary.publicTotal),
+          formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
+          formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
+          formatScore100(summary.averageScore),
+        ];
+      }),
+    ),
+    "",
+    "## By Difficulty",
+    formatMarkdownTable(
+      [
+        "Group",
+        "Pairs",
+        "Scored",
+        "Excluded",
+        "Weight",
+        "Green",
+        "First Pass",
+        "Avg Attempts",
+        "Avg TTG",
+        "Build",
+        "Public",
+        "Hidden",
+        "Adversarial",
+        "Avg/100",
+      ],
+      difficultyAggregates.map(({ key, entries }) => {
+        const summary = summarizeSweepEntries(entries);
+        return [
+          key,
+          String(summary.pairs),
+          String(summary.scoredTargets),
+          String(summary.runtimeExcludedTargets),
+          formatWeight(summary.totalWeight),
+          formatStageRatio(summary.greenTargets, summary.scoredTargets),
+          formatStageRatio(summary.firstPassGreenTargets, summary.scoredTargets),
+          formatAttempts(summary.averageAttemptsUsed),
+          formatDurationMs(summary.averageTimeToGreenMs),
+          formatStageRatio(summary.buildPassed, summary.scoredTargets),
+          formatStageRatio(summary.publicPassed, summary.publicTotal),
+          formatStageRatio(summary.hiddenPassed, summary.hiddenTotal),
+          formatStageRatio(summary.adversarialPassed, summary.adversarialTotal),
+          formatScore100(summary.averageScore),
+        ];
+      }),
+    ),
+    "",
+    "## By Interaction Mode",
+    formatMarkdownTable(
+      [
+        "Group",
+        "Pairs",
+        "Scored",
+        "Excluded",
+        "Weight",
+        "Green",
+        "First Pass",
+        "Avg Attempts",
+        "Avg TTG",
+        "Build",
+        "Public",
+        "Hidden",
+        "Adversarial",
+        "Avg/100",
+      ],
+      interactionModeAggregates.map(({ key, entries }) => {
         const summary = summarizeSweepEntries(entries);
         return [
           key,
@@ -1069,7 +1526,83 @@ function formatDurationMs(value: number | undefined): string {
 }
 
 function formatTaskSourceSummaryLine(summary: SweepTaskSourceSummary): string {
-  return `${summary.totalTargets} total, ${summary.scoredTargets} scored, ${summary.runtimeExcludedTargets} excluded, weight ${formatWeight(summary.totalWeight)}`;
+  return `${summary.totalTargets} total, ${summary.scoredTargets} scored, ${summary.runtimeExcludedTargets} excluded, weight ${formatWeight(summary.totalWeight)}, avg ${formatScore100(summary.averageScore)}/100`;
+}
+
+function formatToolchainSummary(toolchain: Record<string, string | null>): string {
+  const entries = Object.entries(toolchain)
+    .map(([key, value]) => `${key}=\`${value ?? "unknown"}\``)
+    .sort();
+
+  return entries.length > 0 ? entries.join(", ") : "-";
+}
+
+function formatUsageSummaryLine(summary: SweepUsageSummary): string {
+  const parts = [
+    `latency ${formatDurationMs(summary.latencyMs)}`,
+    `avg latency ${formatDurationMs(summary.averageLatencyMs)}`,
+    summary.totalTokens !== undefined ? `tokens ${Math.round(summary.totalTokens)}` : undefined,
+    summary.averageTotalTokensPerEntry !== undefined
+      ? `avg tokens/entry ${Math.round(summary.averageTotalTokensPerEntry)}`
+      : undefined,
+    summary.estimatedCostUsd !== undefined ? `cost ${formatUsd(summary.estimatedCostUsd)}` : undefined,
+    `usage entries ${summary.entriesWithUsage}`,
+  ].filter((value): value is string => value !== undefined);
+
+  return parts.join(", ");
+}
+
+function formatReliabilitySummaryLine(summary: SweepReliabilitySummary): string {
+  return [
+    summary.fullSweepCompleted ? "full sweep complete" : "runtime exclusions present",
+    `invokes ${summary.totalInvocations}`,
+    `avg invokes ${formatAttempts(summary.averageInvocationAttempts)}`,
+    `retry-free ${formatPercent(summary.retryFreeTargetRate)}`,
+    `scored ${formatPercent(summary.scoredTargetRate)}`,
+    `green ${formatPercent(summary.greenTargetRate)}`,
+    `first-pass ${formatPercent(summary.firstPassGreenTargetRate)}`,
+  ].join(", ");
+}
+
+function formatBreakdownScoreLine(
+  breakdown: Record<string, SweepAggregateSummary>,
+  orderedKeys: string[],
+): string {
+  const seen = new Set<string>();
+  const segments: string[] = [];
+
+  for (const key of orderedKeys) {
+    const summary = breakdown[key];
+    if (!summary) {
+      continue;
+    }
+
+    segments.push(`${key} ${formatScore100(summary.averageScore)}/100`);
+    seen.add(key);
+  }
+
+  for (const key of Object.keys(breakdown).sort()) {
+    if (seen.has(key)) {
+      continue;
+    }
+
+    const summary = breakdown[key];
+    if (!summary) {
+      continue;
+    }
+
+    segments.push(`${key} ${formatScore100(summary.averageScore)}/100`);
+  }
+
+  return segments.length > 0 ? segments.join(", ") : "-";
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(4)}`;
 }
 
 function formatScoringDisposition(entry: Pick<SweepEntry, "benchmarkEligible" | "errorStage">): string {

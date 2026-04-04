@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { Difficulty, InteractionMode, TrackId } from "../../core/src/index.js";
-import { pathExists, readJsonFile, toPosixPath } from "../../shared/src/index.js";
+import { pathExists, readJsonFile, readTextFile, toPosixPath } from "../../shared/src/index.js";
 
 export interface BenchmarkSuiteTarget {
   taskId: string;
@@ -25,6 +26,9 @@ export interface BenchmarkSuite {
   tags?: string[];
   weightRules?: BenchmarkSuiteWeightRules;
   targets: BenchmarkSuiteTarget[];
+  sourcePath?: string;
+  relativeId?: string;
+  fingerprint?: string;
 }
 
 export async function listAvailableSuites(rootDir: string): Promise<BenchmarkSuite[]> {
@@ -103,9 +107,19 @@ async function walkSuiteDir(currentDir: string, output: string[]): Promise<void>
 }
 
 async function loadSuiteFile(filePath: string): Promise<BenchmarkSuite> {
-  const suite = await readJsonFile<BenchmarkSuite>(filePath);
+  const [rawText, suite] = await Promise.all([
+    readTextFile(filePath),
+    readJsonFile<BenchmarkSuite>(filePath),
+  ]);
   validateSuite(suite, filePath);
-  return suite;
+  const rootDir = path.resolve(path.dirname(filePath), "..", "..", "..");
+
+  return {
+    ...suite,
+    sourcePath: toPosixPath(path.relative(rootDir, filePath)),
+    relativeId: toSuiteRelativeId(rootDir, filePath),
+    fingerprint: createHash("sha256").update(rawText).digest("hex"),
+  };
 }
 
 function validateSuite(suite: BenchmarkSuite, sourcePath: string): void {

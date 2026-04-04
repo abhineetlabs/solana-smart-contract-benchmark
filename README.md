@@ -278,7 +278,7 @@ Inspect the latest saved sweep report:
 
 Each sweep now writes two report artifacts under `results/sweeps/`:
 
-- `<sweep-id>.json`: machine-readable report with model id, provider, suite/filters, scoring, and per-pair details
+- `<sweep-id>.json`: machine-readable report with schema version, model/provider/adapter ids, suite fingerprint, environment/toolchain snapshot, usage and reliability summaries, breakdowns by source/track/difficulty/mode/category, and per-pair details
 - `<sweep-id>.md`: human-readable summary with metadata, headline metrics, pair tables, aggregates, and failure hotspots
 
 ## CLI Reference

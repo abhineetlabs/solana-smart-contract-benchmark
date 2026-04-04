@@ -66,6 +66,8 @@ export interface AttemptResult {
   model: {
     provider: string;
     modelId: string;
+    adapterId: string;
+    finishReason?: string;
     temperature: number;
     maxOutputTokens?: number;
   };
@@ -432,6 +434,8 @@ async function runSingleAttempt(args: {
       model: {
         provider: args.modelId.split("/")[0] ?? "unknown",
         modelId: args.modelId,
+        adapterId: adapter.id,
+        finishReason: modelResponse.finishReason,
         temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
       },
@@ -506,6 +510,8 @@ async function runSingleAttempt(args: {
       model: {
         provider: args.modelId.split("/")[0] ?? "unknown",
         modelId: args.modelId,
+        adapterId: adapter.id,
+        finishReason: modelResponse?.finishReason,
         temperature: args.temperature,
         maxOutputTokens: args.maxOutputTokens,
       },
