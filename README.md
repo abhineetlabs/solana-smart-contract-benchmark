@@ -281,6 +281,16 @@ Each sweep now writes two report artifacts under `results/sweeps/`:
 - `<sweep-id>.json`: machine-readable report with schema version, model/provider/adapter ids, suite fingerprint, environment/toolchain snapshot, usage and reliability summaries, breakdowns by source/track/difficulty/mode/category, and per-pair details
 - `<sweep-id>.md`: human-readable summary with metadata, headline metrics, pair tables, aggregates, and failure hotspots
 
+Resume only the benchmark-caused failures from a prior sweep instead of rerunning the full suite:
+
+```bash
+./benchmark resume-sweep --latest
+./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
+./benchmark resume-sweep --latest --retry-stage model_output_validation
+```
+
+`resume-sweep` always creates a new sweep report. It reruns only the selected pairs from the source sweep and carries the untouched pairs forward into the new merged report.
+
 ## CLI Reference
 
 This section is intentionally verbose. The goal is that you should be able to understand every command and every important flag without having to infer behavior from examples.
@@ -737,6 +747,61 @@ Examples:
 ./benchmark compare --latest 2
 ./benchmark compare --model claude-code/sonnet
 ./benchmark compare --suite personal_ranking_v1
+```
+
+### `benchmark resume-sweep`
+
+Reruns only selected entries from a previously saved sweep and writes a new merged sweep report.
+
+This is meant for cases where the original run was spoiled by benchmark or runtime issues and you do not want to spend tokens rerunning the entire suite.
+
+Command shape:
+
+```bash
+./benchmark resume-sweep [<sweep-id> | --latest] [flags]
+```
+
+Important behavior:
+
+- it never guesses among multiple explicit sweep ids; if you pass a sweep id, that exact saved sweep is resumed
+- `--latest` intentionally loads the newest saved sweep report from `results/sweeps/`
+- it does not mutate the original sweep; it writes a brand-new merged sweep report with resume metadata
+- by default it reruns runtime-excluded entries only
+- you can also tell it to rerun scored entries for specific failure stages after fixing a benchmark bug
+
+#### `--latest`
+
+Uses the newest locally saved sweep report as the resume source.
+
+#### `--retry-stage <stage[,stage...]>`
+
+Also reruns entries whose final failure stage matches one of the named stages, for example:
+
+- `model_output_validation`
+- `artifact_persist`
+- `workspace_apply`
+
+This is useful when you fix a benchmark-side issue and want to rerun only the affected tasks.
+
+#### `--skip-runtime-excluded`
+
+Disables the default behavior of rerunning runtime-excluded entries. Use this only when you want to resume specific scored failure stages instead.
+
+#### `--require-full-sweep`
+
+Fails the command if the new merged sweep still contains runtime exclusions.
+
+#### `--warm-cache`
+
+Warms each rerun target before execution, just like `run-all --warm-cache`.
+
+Examples:
+
+```bash
+./benchmark resume-sweep --latest
+./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611
+./benchmark resume-sweep --latest --retry-stage model_output_validation
+./benchmark resume-sweep 2026-04-04T09-28-49-987Z_8f844611 --retry-stage model_output_validation --require-full-sweep
 ```
 
 ### `benchmark self-check`

@@ -399,6 +399,9 @@ async function handleResumeSweep(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     options: {
+      latest: {
+        type: "boolean",
+      },
       "retry-stage": {
         type: "string",
       },
@@ -416,10 +419,19 @@ async function handleResumeSweep(args: string[]): Promise<void> {
     allowPositionals: true,
   });
 
-  const sourceSweepId = positionals[0];
-  if (!sourceSweepId) {
-    throw new Error("resume-sweep requires a sweep ID.");
+  if (positionals.length > 1) {
+    throw new Error("resume-sweep accepts at most one explicit sweep ID.");
   }
+
+  if (positionals[0] && values.latest) {
+    throw new Error("resume-sweep cannot combine an explicit sweep ID with --latest.");
+  }
+
+  const sourceSweepId = await resolveResumeSweepId({
+    rootDir: process.cwd(),
+    explicitSweepId: positionals[0],
+    useLatest: values.latest ?? false,
+  });
 
   const retryStages = parseCsvList(values["retry-stage"]);
   const retryRuntimeExcluded = !(values["skip-runtime-excluded"] ?? false);
@@ -1293,12 +1305,37 @@ function printHelp(): void {
   benchmark list suites
   benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
   benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
-  benchmark resume-sweep <sweep-id> [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
+  benchmark resume-sweep [<sweep-id> | --latest] [--retry-stage <stage[,stage...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
   benchmark clean [--tooling] [--results] [--all]
   benchmark compare [<sweep-id> ...] [--latest <n>] [--model <id>] [--suite <suite>]
   benchmark self-check [--track <track>] [--task <task>] [--difficulty <level>] [--suite <suite>]`);
+}
+
+async function resolveResumeSweepId(args: {
+  rootDir: string;
+  explicitSweepId?: string;
+  useLatest: boolean;
+}): Promise<string> {
+  if (args.explicitSweepId) {
+    return args.explicitSweepId;
+  }
+
+  if (!args.useLatest) {
+    throw new Error("resume-sweep requires a sweep ID or --latest.");
+  }
+
+  const [latestReport] = await loadSweepReports({
+    rootDir: args.rootDir,
+    latest: 1,
+  });
+
+  if (!latestReport) {
+    throw new Error("No saved sweep reports found to resume.");
+  }
+
+  return latestReport.sweepId;
 }
 
 function parseCsvList(value: string | undefined): string[] {
