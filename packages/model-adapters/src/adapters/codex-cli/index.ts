@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
+import { normalizeFileMapOutput, parseBenchmarkJsonFromText } from "../../../../shared/src/index.js";
 import type {
   BenchmarkReasoningEffort,
   ModelAdapter,
@@ -18,29 +18,6 @@ const KNOWN_CODEX_MODELS = [
   "codex-oss/ollama/default",
   "codex-oss/lmstudio/default",
 ] as const;
-const FILE_ENTRY_JSON_SCHEMA = JSON.stringify({
-  type: "object",
-  properties: {
-    files: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-          },
-          content: {
-            type: "string",
-          },
-        },
-        required: ["path", "content"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["files"],
-  additionalProperties: false,
-});
 
 interface CodexCliEnvelope {
   rawText: string;
@@ -76,13 +53,6 @@ interface CodexInvocationConfig {
   oss: boolean;
 }
 
-interface CodexStructuredOutput {
-  files?: Array<{
-    path?: string;
-    content?: string;
-  }>;
-}
-
 export class CodexCliModelAdapter implements ModelAdapter {
   readonly id = "codex-cli";
 
@@ -91,6 +61,7 @@ export class CodexCliModelAdapter implements ModelAdapter {
     const invocationDir = await mkdtemp(path.join(tmpdir(), "codex-cli-benchmark-"));
     const startedAt = Date.now();
     const providerReasoningEffort = resolveCodexReasoningEffort(request.reasoningEffort);
+    const editableFiles = extractEditableFiles(request);
 
     try {
       const cliResult = await invokeCodexCli({
@@ -98,6 +69,7 @@ export class CodexCliModelAdapter implements ModelAdapter {
         cwd: invocationDir,
         prompt: request.prompt,
         reasoningEffort: providerReasoningEffort,
+        editableFiles,
       });
 
       return {
@@ -157,12 +129,13 @@ async function invokeCodexCli(
     cwd: string;
     prompt: string;
     reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+    editableFiles: string[];
   },
 ): Promise<CodexCliEnvelope> {
   const cliBinary = process.env.CODEX_BIN ?? "codex";
   const schemaPath = path.join(args.cwd, "codex-output-schema.json");
   const outputPath = path.join(args.cwd, "codex-output.json");
-  await writeFile(schemaPath, FILE_ENTRY_JSON_SCHEMA, "utf8");
+  await writeFile(schemaPath, JSON.stringify(buildCodexOutputSchema(args.editableFiles)), "utf8");
 
   const cliArgs = [
     "exec",
@@ -218,6 +191,52 @@ async function invokeCodexCli(
       stderr: stderr.trim() || undefined,
       threadId: extractThreadId(events),
     },
+  };
+}
+
+function extractEditableFiles(request: ModelRequest): string[] {
+  const fixtureFilesJson = request.metadata.fixtureFilesJson;
+  if (typeof fixtureFilesJson !== "string" || fixtureFilesJson.trim() === "") {
+    throw new Error("Codex benchmark request is missing fixtureFilesJson metadata.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fixtureFilesJson);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Codex benchmark request has invalid fixtureFilesJson metadata: ${message}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Codex benchmark request fixtureFilesJson must be a JSON object.");
+  }
+
+  const editableFiles = Object.keys(parsed);
+  if (editableFiles.length === 0) {
+    throw new Error("Codex benchmark request has no editable files.");
+  }
+
+  return editableFiles;
+}
+
+function buildCodexOutputSchema(editableFiles: string[]): Record<string, unknown> {
+  const fileProperties = Object.fromEntries(
+    editableFiles.map((filePath) => [filePath, { type: "string" }]),
+  );
+
+  return {
+    type: "object",
+    properties: {
+      files: {
+        type: "object",
+        properties: fileProperties,
+        required: editableFiles,
+        additionalProperties: false,
+      },
+    },
+    required: ["files"],
+    additionalProperties: false,
   };
 }
 
@@ -314,40 +333,25 @@ function parseCodexEvents(stdout: string): CodexCliEvent[] {
 }
 
 function extractStructuredOutput(rawText: string): { files: Record<string, string> } {
-  let parsed: CodexStructuredOutput;
+  let parsed: unknown;
   try {
-    parsed = parseBenchmarkJsonFromText(rawText) as CodexStructuredOutput;
+    parsed = parseBenchmarkJsonFromText(rawText);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Codex CLI returned invalid JSON: ${message}`);
   }
 
-  if (!parsed.files || !Array.isArray(parsed.files)) {
-    throw new Error("Codex CLI did not return a files array.");
+  try {
+    const normalized = normalizeFileMapOutput(parsed);
+    if (Object.keys(normalized.files).length === 0) {
+      throw new Error('Codex CLI returned an empty "files" object.');
+    }
+
+    return normalized;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Codex CLI returned invalid file-map output: ${message}`);
   }
-
-  const files: Record<string, string> = {};
-  for (const entry of parsed.files) {
-    if (!entry || typeof entry !== "object") {
-      throw new Error("Codex CLI returned a malformed file entry.");
-    }
-
-    if (!entry.path || typeof entry.path !== "string") {
-      throw new Error("Codex CLI returned a file entry without a valid path.");
-    }
-
-    if (typeof entry.content !== "string") {
-      throw new Error(`Codex CLI returned a non-string file body for "${entry.path}".`);
-    }
-
-    if (files[entry.path] !== undefined) {
-      throw new Error(`Codex CLI returned duplicate content for "${entry.path}".`);
-    }
-
-    files[entry.path] = entry.content;
-  }
-
-  return { files };
 }
 
 function extractUsage(events: CodexCliEvent[]): ModelResponse["usage"] {
