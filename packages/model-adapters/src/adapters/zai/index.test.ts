@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import test from "node:test";
 
 import {
   buildZaiMessages,
   buildZaiRequestBody,
-  extractZaiApiKeyFromOpenCodeAuth,
   extractZaiRawText,
   extractZaiUsage,
   resolveZaiApiKey,
@@ -53,49 +49,9 @@ test("buildZaiRequestBody uses JSON mode and deterministic sampling at temperatu
   assert.deepEqual(body.response_format, { type: "json_object" });
 });
 
-test("extractZaiApiKeyFromOpenCodeAuth supports zai and zai-coding-plan entries", () => {
-  assert.equal(
-    extractZaiApiKeyFromOpenCodeAuth({
-      zai: {
-        type: "api",
-        key: "zai-key",
-      },
-    }),
-    "zai-key",
-  );
-
-  assert.equal(
-    extractZaiApiKeyFromOpenCodeAuth({
-      "zai-coding-plan": {
-        type: "api",
-        key: "coding-key",
-      },
-    }),
-    "coding-key",
-  );
-});
-
-test("resolveZaiApiKey prefers environment variable and falls back to OpenCode auth", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "zai-auth-test-"));
-  const authPath = path.join(dir, "auth.json");
-
-  try {
-    await writeFile(
-      authPath,
-      JSON.stringify({
-        "zai-coding-plan": {
-          type: "api",
-          key: "fallback-key",
-        },
-      }),
-      "utf8",
-    );
-
-    assert.equal(await resolveZaiApiKey({ env: { ZAI_API_KEY: "env-key" }, opencodeAuthPath: authPath }), "env-key");
-    assert.equal(await resolveZaiApiKey({ env: {}, opencodeAuthPath: authPath }), "fallback-key");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
+test("resolveZaiApiKey requires an explicit environment variable", async () => {
+  assert.equal(await resolveZaiApiKey({ env: { ZAI_API_KEY: "env-key" } }), "env-key");
+  await assert.rejects(() => resolveZaiApiKey({ env: {} }), /Set ZAI_API_KEY before running the benchmark/);
 });
 
 test("resolveZaiBaseUrl and resolveZaiTimeoutMs honor environment overrides", () => {

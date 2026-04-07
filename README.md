@@ -283,8 +283,7 @@ Examples:
 
 Authentication:
 
-- set `ZAI_API_KEY`, or
-- reuse an existing OpenCode credential from `~/.local/share/opencode/auth.json` under `zai` or `zai-coding-plan`
+- set `ZAI_API_KEY`
 
 The adapter targets Z.AI's coding endpoint by default:
 

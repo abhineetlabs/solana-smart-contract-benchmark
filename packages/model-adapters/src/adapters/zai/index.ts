@@ -1,7 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
 
 import { FILE_MAP_OUTPUT_FORMAT_LINES, tryParseFileMapOutputFromText } from "../../../../shared/src/index.js";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
@@ -11,7 +8,6 @@ const DEFAULT_ZAI_MODEL = "glm-5.1";
 const DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 const DEFAULT_ZAI_TIMEOUT_MS = 15 * 60 * 1000;
 const KNOWN_ZAI_MODELS = ["zai/default", "zai/glm-5.1"] as const;
-const OPENCODE_AUTH_PATH = path.join(homedir(), ".local", "share", "opencode", "auth.json");
 const DEFAULT_USER_ID = "solana-benchmark";
 
 interface ZaiChatMessage {
@@ -172,7 +168,6 @@ export function buildZaiMessages(prompt: string, systemPrompt?: string): ZaiChat
 
 export async function resolveZaiApiKey(args?: {
   env?: NodeJS.ProcessEnv;
-  opencodeAuthPath?: string;
 }): Promise<string> {
   const env = args?.env ?? process.env;
   const fromEnv = env.ZAI_API_KEY?.trim();
@@ -180,37 +175,7 @@ export async function resolveZaiApiKey(args?: {
     return fromEnv;
   }
 
-  const authPath = args?.opencodeAuthPath ?? OPENCODE_AUTH_PATH;
-  const fromOpenCodeAuth = await readZaiApiKeyFromOpenCodeAuth(authPath);
-  if (fromOpenCodeAuth) {
-    return fromOpenCodeAuth;
-  }
-
-  throw new Error(
-    `Z.AI API key not found. Set ZAI_API_KEY or configure a zai/zai-coding-plan API key in ${authPath}.`,
-  );
-}
-
-export function extractZaiApiKeyFromOpenCodeAuth(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const authRecord = value as Record<string, unknown>;
-
-  for (const providerId of ["zai", "zai-coding-plan"]) {
-    const candidate = authRecord[providerId];
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-      continue;
-    }
-
-    const entry = candidate as { type?: unknown; key?: unknown };
-    if (entry.type === "api" && typeof entry.key === "string" && entry.key.trim() !== "") {
-      return entry.key.trim();
-    }
-  }
-
-  return undefined;
+  throw new Error("Z.AI API key not found. Set ZAI_API_KEY before running the benchmark.");
 }
 
 export function resolveZaiBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
@@ -316,15 +281,6 @@ async function invokeZaiChatCompletion(args: {
     responseId: parsedResponse.id,
     responseModel: parsedResponse.model,
   };
-}
-
-async function readZaiApiKeyFromOpenCodeAuth(authPath: string): Promise<string | undefined> {
-  try {
-    const raw = await readFile(authPath, "utf8");
-    return extractZaiApiKeyFromOpenCodeAuth(JSON.parse(raw));
-  } catch {
-    return undefined;
-  }
 }
 
 function normalizeTemperature(value: number): number {
