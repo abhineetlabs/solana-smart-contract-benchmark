@@ -22,7 +22,7 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
 - practical personal workflow suites: `daily_v1`, `hard_v1`, `nightmare_v1`, `personal_ranking_v1`, and `leaderboard_v1`
 - private task and private suite scaffolding under `tasks-private/` and `configs/suites/private/` for unpublished holdouts and internal frontier leaderboards
-- mock baselines plus Claude Code, Codex CLI, Gemini CLI, and OpenCode adapters
+- mock baselines plus Claude Code, Codex CLI, Gemini CLI, OpenCode, and Z.AI direct adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, compare, suite commands, and multi-attempt time-to-green runs
 
@@ -57,6 +57,7 @@ npm install --ignore-scripts
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model gemini/default --track anchor --task counter_authority
 ./benchmark run --model opencode/default --track anchor --task counter_authority
+./benchmark run --model zai/glm-5.1 --track anchor --task counter_authority
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite personal_ranking_v1 --max-attempts 2
@@ -77,6 +78,7 @@ If your goal is a pure model benchmark rather than a provider reliability benchm
    - `claude-code/...`
    - `codex/...`
    - `gemini/...`
+   - `zai/...`
 2. Use `--strict-capability` on `run` or `run-all`.
    - this retries `model_invoke` failures before giving up
    - if the model still never returns usable output, that target is excluded from the capability score instead of being counted as a model zero
@@ -126,7 +128,7 @@ Current adapter behavior:
   - Benchmark `xhigh` maps to Claude CLI `--effort max`.
 - Codex and Codex OSS support benchmark effort control.
   - The benchmark maps `low|medium|high|xhigh` to Codex CLI `-c model_reasoning_effort="..."`.
-- Gemini and OpenCode do not currently expose a benchmark-integrated effort control in this repo.
+- Gemini, OpenCode, and Z.AI direct do not currently expose a benchmark-integrated effort control in this repo.
   - Passing `--reasoning-effort` to those adapters will fail fast instead of silently ignoring the setting.
 
 Artifacts persist both the normalized benchmark setting and the provider-applied setting:
@@ -225,6 +227,8 @@ Built-in model ids currently listed by the CLI:
 - `codex-oss/lmstudio/default`
 - `gemini/default`
 - `opencode/default`
+- `zai/default`
+- `zai/glm-5.1`
 
 The Codex adapter also accepts explicit model patterns even when they are not listed verbatim:
 
@@ -264,6 +268,27 @@ Examples:
 ./benchmark run --model opencode/openrouter/qwen/qwen3-coder --track anchor --task escrow_basic
 ./benchmark run --model opencode/ollama/qwen2.5-coder:32b --track anchor --task vesting_router_cpi
 ```
+
+The Z.AI direct adapter accepts:
+
+- `zai/default`
+- `zai/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model zai/default --track anchor --task counter_authority
+./benchmark run --model zai/glm-5.1 --track anchor --task vesting_router_cpi
+```
+
+Authentication:
+
+- set `ZAI_API_KEY`, or
+- reuse an existing OpenCode credential from `~/.local/share/opencode/auth.json` under `zai` or `zai-coding-plan`
+
+The adapter targets Z.AI's coding endpoint by default:
+
+- `https://api.z.ai/api/coding/paas/v4`
 
 ## Full Sweep
 

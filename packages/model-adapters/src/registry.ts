@@ -3,6 +3,7 @@ import { CodexCliModelAdapter, listCodexCliModels } from "./adapters/codex-cli/i
 import { GeminiCliModelAdapter, listGeminiCliModels } from "./adapters/gemini-cli/index.js";
 import { MockModelAdapter, listMockModels } from "./adapters/mock/index.js";
 import { OpenCodeModelAdapter, listOpenCodeModels } from "./adapters/opencode/index.js";
+import { ZaiModelAdapter, listZaiModels } from "./adapters/zai/index.js";
 import type { ModelAdapter } from "./types.js";
 
 const claudeCodeAdapter = new ClaudeCodeModelAdapter();
@@ -10,6 +11,7 @@ const codexCliAdapter = new CodexCliModelAdapter();
 const geminiCliAdapter = new GeminiCliModelAdapter();
 const mockAdapter = new MockModelAdapter();
 const openCodeAdapter = new OpenCodeModelAdapter();
+const zaiAdapter = new ZaiModelAdapter();
 
 export function getAvailableModelIds(): string[] {
   return [
@@ -18,6 +20,7 @@ export function getAvailableModelIds(): string[] {
     ...listCodexCliModels(),
     ...listGeminiCliModels(),
     ...listOpenCodeModels(),
+    ...listZaiModels(),
   ].sort();
 }
 
@@ -40,6 +43,10 @@ export function getAdapterForModel(modelId: string): ModelAdapter {
 
   if (modelId.startsWith("opencode/")) {
     return openCodeAdapter;
+  }
+
+  if (modelId.startsWith("zai/")) {
+    return zaiAdapter;
   }
 
   throw new Error(`No adapter registered for model "${modelId}".`);
