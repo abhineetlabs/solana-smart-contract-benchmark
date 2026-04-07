@@ -55,6 +55,7 @@ test("resolveZaiApiKey requires an explicit environment variable", async () => {
 });
 
 test("resolveZaiBaseUrl and resolveZaiTimeoutMs honor environment overrides", () => {
+  assert.equal(resolveZaiBaseUrl({}), "https://api.z.ai/api/paas/v4");
   assert.equal(resolveZaiBaseUrl({ ZAI_BASE_URL: "https://example.com/custom/" }), "https://example.com/custom");
   assert.equal(resolveZaiBaseUrl({ ZAI_API_BASE_URL: "https://example.com/alt///" }), "https://example.com/alt");
   assert.equal(resolveZaiTimeoutMs({ ZAI_TIMEOUT_MS: "1234" }), 1234);

@@ -2,6 +2,7 @@ import { ClaudeCodeModelAdapter, listClaudeCodeModels } from "./adapters/claude-
 import { CodexCliModelAdapter, listCodexCliModels } from "./adapters/codex-cli/index.js";
 import { GeminiCliModelAdapter, listGeminiCliModels } from "./adapters/gemini-cli/index.js";
 import { MockModelAdapter, listMockModels } from "./adapters/mock/index.js";
+import { OpenRouterModelAdapter, listOpenRouterModels } from "./adapters/openrouter/index.js";
 import { OpenCodeModelAdapter, listOpenCodeModels } from "./adapters/opencode/index.js";
 import { ZaiModelAdapter, listZaiModels } from "./adapters/zai/index.js";
 import type { ModelAdapter } from "./types.js";
@@ -10,6 +11,7 @@ const claudeCodeAdapter = new ClaudeCodeModelAdapter();
 const codexCliAdapter = new CodexCliModelAdapter();
 const geminiCliAdapter = new GeminiCliModelAdapter();
 const mockAdapter = new MockModelAdapter();
+const openRouterAdapter = new OpenRouterModelAdapter();
 const openCodeAdapter = new OpenCodeModelAdapter();
 const zaiAdapter = new ZaiModelAdapter();
 
@@ -19,6 +21,7 @@ export function getAvailableModelIds(): string[] {
     ...listClaudeCodeModels(),
     ...listCodexCliModels(),
     ...listGeminiCliModels(),
+    ...listOpenRouterModels(),
     ...listOpenCodeModels(),
     ...listZaiModels(),
   ].sort();
@@ -39,6 +42,10 @@ export function getAdapterForModel(modelId: string): ModelAdapter {
 
   if (modelId.startsWith("gemini/")) {
     return geminiCliAdapter;
+  }
+
+  if (modelId.startsWith("openrouter/")) {
+    return openRouterAdapter;
   }
 
   if (modelId.startsWith("opencode/")) {

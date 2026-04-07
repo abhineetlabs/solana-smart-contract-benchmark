@@ -5,7 +5,7 @@ import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const ZAI_PREFIX = "zai/";
 const DEFAULT_ZAI_MODEL = "glm-5.1";
-const DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
+const DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/paas/v4";
 const DEFAULT_ZAI_TIMEOUT_MS = 15 * 60 * 1000;
 const KNOWN_ZAI_MODELS = ["zai/default", "zai/glm-5.1"] as const;
 const DEFAULT_USER_ID = "solana-benchmark";

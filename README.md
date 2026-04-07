@@ -22,7 +22,7 @@ The repository is being built from the implementation blueprint in `docs/IMPLEME
 - a frozen `ranking_v1` suite for repeatable model-vs-model comparisons
 - practical personal workflow suites: `daily_v1`, `hard_v1`, `nightmare_v1`, `personal_ranking_v1`, and `leaderboard_v1`
 - private task and private suite scaffolding under `tasks-private/` and `configs/suites/private/` for unpublished holdouts and internal frontier leaderboards
-- mock baselines plus Claude Code, Codex CLI, Gemini CLI, OpenCode, and Z.AI direct adapters
+- mock baselines plus Claude Code, Codex CLI, Gemini CLI, OpenCode, Z.AI, and OpenRouter direct adapters
 - end-to-end benchmark runs with persisted artifacts and scores
 - local self-check, warm-cache, run-all, compare, suite commands, and multi-attempt time-to-green runs
 
@@ -57,6 +57,7 @@ npm install --ignore-scripts
 ./benchmark run --model codex/default --track anchor --task counter_authority
 ./benchmark run --model gemini/default --track anchor --task counter_authority
 ./benchmark run --model opencode/default --track anchor --task counter_authority
+./benchmark run --model openrouter/default --track anchor --task counter_authority
 ./benchmark run --model zai/glm-5.1 --track anchor --task counter_authority
 ./benchmark run --model mock/starter --track anchor --task staking_pool_rewards --max-attempts 2
 ./benchmark run-all --model claude-code/sonnet --suite daily_v1 --max-attempts 2
@@ -78,6 +79,7 @@ If your goal is a pure model benchmark rather than a provider reliability benchm
    - `claude-code/...`
    - `codex/...`
    - `gemini/...`
+   - `openrouter/...`
    - `zai/...`
 2. Use `--strict-capability` on `run` or `run-all`.
    - this retries `model_invoke` failures before giving up
@@ -128,6 +130,9 @@ Current adapter behavior:
   - Benchmark `xhigh` maps to Claude CLI `--effort max`.
 - Codex and Codex OSS support benchmark effort control.
   - The benchmark maps `low|medium|high|xhigh` to Codex CLI `-c model_reasoning_effort="..."`.
+- OpenRouter direct supports benchmark effort control.
+  - The benchmark maps `low|medium|high|xhigh` directly to OpenRouter `reasoning.effort`.
+  - The adapter also asks OpenRouter to exclude reasoning traces from the returned content so file-map JSON stays clean.
 - Gemini, OpenCode, and Z.AI direct do not currently expose a benchmark-integrated effort control in this repo.
   - Passing `--reasoning-effort` to those adapters will fail fast instead of silently ignoring the setting.
 
@@ -226,6 +231,8 @@ Built-in model ids currently listed by the CLI:
 - `codex-oss/ollama/default`
 - `codex-oss/lmstudio/default`
 - `gemini/default`
+- `openrouter/default`
+- `openrouter/openai/gpt-5.2`
 - `opencode/default`
 - `zai/default`
 - `zai/glm-5.1`
@@ -255,6 +262,33 @@ Examples:
 ./benchmark run --model gemini/default --track anchor --task counter_authority
 ./benchmark run --model gemini/gemini-2.5-pro --track anchor --task vesting_router_cpi
 ```
+
+The OpenRouter direct adapter accepts:
+
+- `openrouter/default`
+- `openrouter/<provider>/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model openrouter/default --track anchor --task counter_authority
+./benchmark run --model openrouter/openai/gpt-5.2 --track anchor --task vesting_router_cpi
+./benchmark run --model openrouter/qwen/qwen3-coder --track anchor --task escrow_basic
+```
+
+Authentication:
+
+- set `OPENROUTER_API_KEY`
+
+Optional app attribution:
+
+- `OPENROUTER_HTTP_REFERER`
+- `OPENROUTER_TITLE`
+
+`openrouter/default` uses:
+
+- `OPENROUTER_DEFAULT_MODEL` when set
+- otherwise `openai/gpt-5.2`
 
 The OpenCode adapter accepts:
 
