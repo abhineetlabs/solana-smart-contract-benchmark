@@ -8,6 +8,25 @@ import type { ModelAdapter, ModelRequest, ModelResponse } from "../../types.js";
 
 const OPENCODE_PREFIX = "opencode/";
 const KNOWN_OPENCODE_MODELS = ["opencode/default"] as const;
+const OPENCODE_BENCHMARK_PERMISSION = JSON.stringify({
+  read: "deny",
+  edit: "deny",
+  bash: "deny",
+  glob: "deny",
+  grep: "deny",
+  list: "deny",
+  task: "deny",
+  skill: "deny",
+  lsp: "deny",
+  todoread: "deny",
+  todowrite: "deny",
+  webfetch: "deny",
+  websearch: "deny",
+  codesearch: "deny",
+  question: "deny",
+  plan_enter: "deny",
+  plan_exit: "deny",
+});
 
 interface OpenCodeEvent {
   type?: string;
@@ -19,6 +38,8 @@ interface OpenCodeEvent {
     sessionID?: string;
     type?: string;
     text?: string;
+    delta?: string;
+    content?: string;
     reason?: string;
     tokens?: {
       total?: number;
@@ -112,7 +133,7 @@ async function invokeOpenCode(args: {
   usage?: ModelResponse["usage"];
 }> {
   const cliBinary = process.env.OPENCODE_BIN ?? "opencode";
-  const cliArgs = ["run", "--format", "json"];
+  const cliArgs = ["run", "--pure", "--format", "json"];
 
   if (args.model) {
     cliArgs.push("--model", args.model);
@@ -124,12 +145,18 @@ async function invokeOpenCode(args: {
     command: cliBinary,
     args: cliArgs,
     cwd: args.cwd,
+    env: {
+      ...process.env,
+      OPENCODE_PERMISSION: OPENCODE_BENCHMARK_PERMISSION,
+    },
   });
 
   const events = parseOpenCodeEvents(stdout);
   const rawText = extractLastText(events);
   if (!rawText) {
-    throw new Error(`OpenCode returned no text output.${formatStderr(stderr)}`);
+    throw new Error(
+      `OpenCode returned no text output.${formatStderr(stderr)}${formatStdoutTail(stdout)}`,
+    );
   }
 
   return {
@@ -146,11 +173,12 @@ async function runCliCommand(args: {
   command: string;
   args: string[];
   cwd: string;
+  env: NodeJS.ProcessEnv;
 }): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(args.command, args.args, {
       cwd: args.cwd,
-      env: process.env,
+      env: args.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -201,18 +229,38 @@ function parseOpenCodeEvents(stdout: string): OpenCodeEvent[] {
   return events;
 }
 
-function extractLastText(events: OpenCodeEvent[]): string | undefined {
-  return [...events]
+export function extractLastText(events: OpenCodeEvent[]): string | undefined {
+  const legacyText = [...events]
     .reverse()
-    .find((event) => event.type === "text" && typeof event.part?.text === "string")
+    .find((event) => normalizeEventType(event) === "text")
     ?.part?.text
     ?.trim();
+  if (legacyText) {
+    return legacyText;
+  }
+
+  const chunks: string[] = [];
+
+  for (const event of events) {
+    const eventType = normalizeEventType(event);
+    if (!eventType || !isTextEventType(eventType)) {
+      continue;
+    }
+
+    const fragment = extractTextFragment(event.part);
+    if (fragment) {
+      chunks.push(fragment);
+    }
+  }
+
+  const combined = chunks.join("").trim();
+  return combined || undefined;
 }
 
 function extractFinishReason(events: OpenCodeEvent[]): string | undefined {
   return [...events]
     .reverse()
-    .find((event) => event.type === "step_finish" && typeof event.part?.reason === "string")
+    .find((event) => normalizeEventType(event) === "step_finish" && typeof event.part?.reason === "string")
     ?.part?.reason;
 }
 
@@ -223,7 +271,7 @@ function extractSessionId(events: OpenCodeEvent[]): string | undefined {
 function extractUsage(events: OpenCodeEvent[]): ModelResponse["usage"] {
   const finishEvent = [...events]
     .reverse()
-    .find((event) => event.type === "step_finish" && event.part?.tokens);
+    .find((event) => normalizeEventType(event) === "step_finish" && event.part?.tokens);
 
   const tokens = finishEvent?.part?.tokens;
   const inputTokens = tokens?.input;
@@ -269,4 +317,53 @@ function formatStderr(stderr: string): string {
 function formatStdout(stdout: string): string {
   const value = stdout.trim();
   return value ? ` stdout: ${value}` : "";
+}
+
+function formatStdoutTail(stdout: string): string {
+  const lines = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return "";
+  }
+
+  return ` stdout_tail: ${lines.slice(-5).join(" | ")}`;
+}
+
+function normalizeEventType(event: OpenCodeEvent): string | undefined {
+  const eventType = event.type?.trim();
+  if (eventType === "finish-step") {
+    return "step_finish";
+  }
+  if (eventType) {
+    return eventType;
+  }
+
+  const partType = event.part?.type?.trim();
+  if (!partType) {
+    return undefined;
+  }
+
+  if (partType === "finish-step") {
+    return "step_finish";
+  }
+
+  return partType;
+}
+
+function isTextEventType(eventType: string): boolean {
+  return eventType === "text" || eventType === "text-start" || eventType === "text-delta" || eventType === "text-end";
+}
+
+function extractTextFragment(part: OpenCodeEvent["part"]): string | undefined {
+  const candidates = [part?.text, part?.delta, part?.content];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  return undefined;
 }
