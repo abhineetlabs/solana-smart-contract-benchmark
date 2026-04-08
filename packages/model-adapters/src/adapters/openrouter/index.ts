@@ -25,6 +25,10 @@ interface OpenRouterReasoningConfig {
 
 interface OpenRouterProviderPreferences {
   require_parameters: boolean;
+  allow_fallbacks?: boolean;
+  only?: string[];
+  order?: string[];
+  ignore?: string[];
 }
 
 interface OpenRouterChatCompletionRequest {
@@ -94,6 +98,7 @@ export class OpenRouterModelAdapter implements ModelAdapter {
     const baseUrl = resolveOpenRouterBaseUrl();
     const timeoutMs = resolveOpenRouterTimeoutMs();
     const forwardedModel = resolveOpenRouterModelId(request.modelId);
+    const providerPreferences = resolveOpenRouterProviderPreferences();
     const startedAt = Date.now();
 
     const completion = await invokeOpenRouterChatCompletion({
@@ -109,6 +114,7 @@ export class OpenRouterModelAdapter implements ModelAdapter {
         maxOutputTokens: request.maxOutputTokens,
         reasoningEffort: request.reasoningEffort,
         metadata: buildOpenRouterMetadata(request),
+        providerPreferences,
       }),
     });
 
@@ -127,6 +133,7 @@ export class OpenRouterModelAdapter implements ModelAdapter {
         responseModel: completion.responseModel,
         requestId: completion.requestId,
         responseId: completion.responseId,
+        providerPreferences,
         routingProvider: completion.routingProvider,
         nativeFinishReason: completion.nativeFinishReason,
       },
@@ -158,6 +165,7 @@ export function buildOpenRouterRequestBody(args: {
   maxOutputTokens?: number;
   reasoningEffort?: BenchmarkReasoningEffort;
   metadata?: Record<string, string>;
+  providerPreferences?: OpenRouterProviderPreferences;
   userId?: string;
 }): OpenRouterChatCompletionRequest {
   const body: OpenRouterChatCompletionRequest = {
@@ -168,7 +176,7 @@ export function buildOpenRouterRequestBody(args: {
     response_format: {
       type: "json_object",
     },
-    provider: {
+    provider: args.providerPreferences ?? {
       require_parameters: true,
     },
     user: args.userId ?? DEFAULT_USER_ID,
@@ -274,6 +282,36 @@ export function resolveOpenRouterHeaders(env: NodeJS.ProcessEnv = process.env): 
   }
 
   return headers;
+}
+
+export function resolveOpenRouterProviderPreferences(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenRouterProviderPreferences {
+  const provider: OpenRouterProviderPreferences = {
+    require_parameters: true,
+  };
+
+  const only = parseProviderSlugList(env.OPENROUTER_PROVIDER_ONLY);
+  if (only.length > 0) {
+    provider.only = only;
+  }
+
+  const order = parseProviderSlugList(env.OPENROUTER_PROVIDER_ORDER);
+  if (order.length > 0) {
+    provider.order = order;
+  }
+
+  const ignore = parseProviderSlugList(env.OPENROUTER_PROVIDER_IGNORE);
+  if (ignore.length > 0) {
+    provider.ignore = ignore;
+  }
+
+  const allowFallbacks = parseOptionalBoolean(env.OPENROUTER_ALLOW_FALLBACKS);
+  if (allowFallbacks !== undefined) {
+    provider.allow_fallbacks = allowFallbacks;
+  }
+
+  return provider;
 }
 
 export function extractOpenRouterRawText(response: OpenRouterChatCompletionResponse): string | undefined {
@@ -442,6 +480,30 @@ function normalizeTemperature(value: number): number {
   }
 
   return value;
+}
+
+function parseProviderSlugList(rawValue: string | undefined): string[] {
+  return (rawValue ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function parseOptionalBoolean(rawValue: string | undefined): boolean | undefined {
+  const value = rawValue?.trim().toLowerCase();
+  if (!value) {
+    return undefined;
+  }
+
+  if (value === "1" || value === "true" || value === "yes" || value === "on") {
+    return true;
+  }
+
+  if (value === "0" || value === "false" || value === "no" || value === "off") {
+    return false;
+  }
+
+  throw new Error(`Invalid OPENROUTER_ALLOW_FALLBACKS value: ${rawValue}`);
 }
 
 function normalizeBaseUrl(value: string): string {

@@ -285,10 +285,28 @@ Optional app attribution:
 - `OPENROUTER_HTTP_REFERER`
 - `OPENROUTER_TITLE`
 
+Optional provider routing:
+
+- `OPENROUTER_PROVIDER_ONLY=fireworks`
+- `OPENROUTER_ALLOW_FALLBACKS=false`
+- `OPENROUTER_PROVIDER_ORDER=fireworks,groq`
+- `OPENROUTER_PROVIDER_IGNORE=together`
+
 `openrouter/default` uses:
 
 - `OPENROUTER_DEFAULT_MODEL` when set
 - otherwise `openai/gpt-5.2`
+
+To pin GLM 5.1 to Fireworks specifically:
+
+```bash
+export OPENROUTER_API_KEY=...
+export OPENROUTER_PROVIDER_ONLY=fireworks
+export OPENROUTER_ALLOW_FALLBACKS=false
+./benchmark run --model openrouter/z-ai/glm-5.1 --track anchor --task counter_authority
+```
+
+`benchmark run` will print the routed OpenRouter provider when it is available, and the same value is also saved under `model.providerMetadata.routingProvider` in the run's `result.json`.
 
 The OpenCode adapter accepts:
 

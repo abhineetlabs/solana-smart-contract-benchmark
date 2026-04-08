@@ -11,6 +11,7 @@ import {
   resolveOpenRouterBaseUrl,
   resolveOpenRouterHeaders,
   resolveOpenRouterModelId,
+  resolveOpenRouterProviderPreferences,
   resolveOpenRouterTimeoutMs,
 } from "./index.js";
 
@@ -63,6 +64,25 @@ test("buildOpenRouterRequestBody enables JSON mode, provider parameter enforceme
   });
 });
 
+test("buildOpenRouterRequestBody can pin provider routing preferences", () => {
+  const body = buildOpenRouterRequestBody({
+    model: "z-ai/glm-5.1",
+    prompt: "# Task",
+    temperature: 0,
+    providerPreferences: {
+      require_parameters: true,
+      only: ["fireworks"],
+      allow_fallbacks: false,
+    },
+  });
+
+  assert.deepEqual(body.provider, {
+    require_parameters: true,
+    only: ["fireworks"],
+    allow_fallbacks: false,
+  });
+});
+
 test("buildOpenRouterMetadata forwards only compact benchmark metadata", () => {
   const metadata = buildOpenRouterMetadata({
     attemptIndex: 2,
@@ -111,6 +131,33 @@ test("resolveOpenRouterBaseUrl, timeout, and app headers honor environment overr
       "HTTP-Referer": "https://benchmark.example",
       "X-OpenRouter-Title": "Solana Benchmark",
     },
+  );
+});
+
+test("resolveOpenRouterProviderPreferences parses pinning and routing env vars", () => {
+  assert.deepEqual(resolveOpenRouterProviderPreferences({}), {
+    require_parameters: true,
+  });
+
+  assert.deepEqual(
+    resolveOpenRouterProviderPreferences({
+      OPENROUTER_PROVIDER_ONLY: "fireworks",
+      OPENROUTER_PROVIDER_ORDER: "fireworks,groq",
+      OPENROUTER_PROVIDER_IGNORE: "together",
+      OPENROUTER_ALLOW_FALLBACKS: "false",
+    }),
+    {
+      require_parameters: true,
+      only: ["fireworks"],
+      order: ["fireworks", "groq"],
+      ignore: ["together"],
+      allow_fallbacks: false,
+    },
+  );
+
+  assert.throws(
+    () => resolveOpenRouterProviderPreferences({ OPENROUTER_ALLOW_FALLBACKS: "maybe" }),
+    /Invalid OPENROUTER_ALLOW_FALLBACKS value/,
   );
 });
 

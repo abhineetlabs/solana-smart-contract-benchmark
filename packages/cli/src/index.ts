@@ -232,6 +232,10 @@ async function handleRun(args: string[]): Promise<void> {
   console.log(
     `Public tests: ${execution.result.tests.public.passed}/${execution.result.tests.public.total}`,
   );
+  const routedProvider = execution.result.model.providerMetadata?.routingProvider;
+  if (typeof routedProvider === "string" && routedProvider.trim() !== "") {
+    console.log(`Routed provider: ${routedProvider}`);
+  }
   if (execution.result.status === "failed" && execution.result.error) {
     console.log(`Failure stage: ${execution.result.error.stage}`);
     console.log(`Failure message: ${execution.result.error.message}`);

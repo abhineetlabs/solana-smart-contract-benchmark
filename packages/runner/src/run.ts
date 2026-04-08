@@ -78,6 +78,7 @@ export interface AttemptResult {
     maxOutputTokens?: number;
     reasoningEffort: BenchmarkReasoningEffort;
     providerReasoningEffort?: string;
+    providerMetadata?: Record<string, unknown>;
   };
   prompt: {
     protocolVersion: string;
@@ -453,6 +454,7 @@ async function runSingleAttempt(args: {
         maxOutputTokens: args.maxOutputTokens,
         reasoningEffort: modelResponse.reasoningEffort ?? args.reasoningEffort,
         providerReasoningEffort: modelResponse.providerReasoningEffort,
+        providerMetadata: modelResponse.providerMetadata,
       },
       prompt: {
         protocolVersion: "1.0.0",
@@ -531,6 +533,7 @@ async function runSingleAttempt(args: {
         maxOutputTokens: args.maxOutputTokens,
         reasoningEffort: modelResponse?.reasoningEffort ?? args.reasoningEffort,
         providerReasoningEffort: modelResponse?.providerReasoningEffort,
+        providerMetadata: modelResponse?.providerMetadata,
       },
       prompt: {
         protocolVersion: "1.0.0",
