@@ -326,6 +326,8 @@ The Z.AI direct adapter accepts:
 - `zai/default`
 - `zai/<model>`
 
+This adapter makes direct HTTP API calls to Z.AI. It does not use the GLM Coding Plan adapter.
+
 Examples:
 
 ```bash
@@ -337,9 +339,10 @@ Authentication:
 
 - set `ZAI_API_KEY`
 
-The adapter targets Z.AI's coding endpoint by default:
+Base URL:
 
-- `https://api.z.ai/api/coding/paas/v4`
+- default: `https://api.z.ai/api/paas/v4`
+- override with `ZAI_BASE_URL` or `ZAI_API_BASE_URL` if you want to point the adapter elsewhere
 
 ## Full Sweep
 

@@ -26,6 +26,7 @@ import { loadBenchmarkSuite, type BenchmarkSuite, type BenchmarkSuiteTarget } fr
 import { warmTaskCache } from "./warm.js";
 
 const SWEEP_REPORT_SCHEMA_VERSION = 3;
+const ZAI_INTER_TARGET_COOLDOWN_MS = 5_000;
 
 export interface BenchmarkTarget {
   taskId: string;
@@ -639,6 +640,7 @@ async function executeSweepTargets(args: {
   onProgress?: (message: string) => void;
 }): Promise<SweepEntry[]> {
   const entries: SweepEntry[] = [];
+  const interTargetCooldownMs = getInterTargetCooldownMs(args.modelId);
 
   for (const [targetIndex, target] of args.targets.entries()) {
     const progressPrefix = `[${targetIndex + 1}/${args.targets.length}] ${target.taskId}/${target.track}`;
@@ -673,9 +675,32 @@ async function executeSweepTargets(args: {
     args.onProgress?.(
       `${progressPrefix}: target finished (${entry.scoringDisposition === "scored" ? `${formatScore100(entry.score)}/100` : `excluded:${entry.errorStage ?? "runtime"}`})`,
     );
+
+    const hasMoreTargets = targetIndex < args.targets.length - 1;
+    if (hasMoreTargets && interTargetCooldownMs > 0) {
+      args.onProgress?.(
+        `${progressPrefix}: cooling down ${formatDurationMs(interTargetCooldownMs)} before next target`,
+      );
+      await sleep(interTargetCooldownMs);
+    }
   }
 
   return entries;
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
+
+export function getInterTargetCooldownMs(modelId: string): number {
+  const adapterId = getAdapterForModel(modelId).id;
+  if (adapterId === "zai") {
+    return ZAI_INTER_TARGET_COOLDOWN_MS;
+  }
+
+  return 0;
 }
 
 function computeSweepSummary(entries: SweepEntry[]): SweepSummary {

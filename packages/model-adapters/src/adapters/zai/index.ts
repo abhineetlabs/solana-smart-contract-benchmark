@@ -261,8 +261,9 @@ async function invokeZaiChatCompletion(args: {
   const parsedResponse = parseZaiApiResponse(rawResponseText);
 
   if (!response.ok) {
+    const retryAfterMs = parseRetryAfterMsHeader(response.headers.get("retry-after"));
     throw new Error(
-      `Z.AI API returned ${response.status} ${response.statusText}.${formatZaiApiError(parsedResponse, rawResponseText)}`,
+      `Z.AI API returned ${response.status} ${response.statusText}.${formatZaiApiError(parsedResponse, rawResponseText)}${formatRetryAfterDetails(retryAfterMs)}`,
     );
   }
 
@@ -347,4 +348,31 @@ function formatResponseBody(rawText: string): string {
   }
 
   return ` body: ${value}`;
+}
+
+function parseRetryAfterMsHeader(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const seconds = Number.parseInt(value, 10);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+
+  const dateMs = Date.parse(value);
+  if (Number.isNaN(dateMs)) {
+    return undefined;
+  }
+
+  const remainingMs = dateMs - Date.now();
+  return remainingMs > 0 ? remainingMs : undefined;
+}
+
+function formatRetryAfterDetails(retryAfterMs: number | undefined): string {
+  if (retryAfterMs === undefined) {
+    return "";
+  }
+
+  return ` retry_after_ms=${retryAfterMs}`;
 }

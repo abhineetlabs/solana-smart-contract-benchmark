@@ -166,6 +166,11 @@ export interface BenchmarkExecution {
   run: BenchmarkRunSummary;
 }
 
+const DEFAULT_MODEL_INVOKE_RETRY_BASE_DELAY_MS = 2_000;
+const DEFAULT_MODEL_INVOKE_RETRY_MAX_DELAY_MS = 15_000;
+const RATE_LIMIT_RETRY_BASE_DELAY_MS = 10_000;
+const RATE_LIMIT_RETRY_MAX_DELAY_MS = 120_000;
+
 export async function runBenchmark(args: RunBenchmarkArgs): Promise<BenchmarkExecution> {
   const mode = args.mode ?? "offline";
   const temperature = args.temperature ?? 0;
@@ -966,9 +971,14 @@ async function runAttemptWithCapabilityRetries(args: {
       break;
     }
 
-    args.onProgress?.(
-      `${args.progressPrefix}: model invoke failed, retrying provider call ${invocationNumber + 1}/${args.runtimeRetryLimit + 1}`,
+    const retryDelayMs = computeCapabilityRetryDelayMs(
+      execution.result.error?.message ?? "",
+      invocationNumber,
     );
+    args.onProgress?.(
+      `${args.progressPrefix}: model invoke failed, waiting ${formatDurationMs(retryDelayMs)} before provider call ${invocationNumber + 1}/${args.runtimeRetryLimit + 1}`,
+    );
+    await sleep(retryDelayMs);
   }
 
   if (!finalExecution) {
@@ -1008,6 +1018,59 @@ function toAttemptTestStage(
 
 function formatStageFailures(stage: string, failures: string[]): string[] {
   return failures.map((failure) => `- ${stage}: ${failure}`);
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
+
+export function isRateLimitModelInvokeError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("rate-limit") ||
+    normalized.includes("code=1302") ||
+    normalized.includes("code=1303") ||
+    normalized.includes("code=1305")
+  );
+}
+
+export function parseRetryAfterMs(message: string): number | undefined {
+  const match = /retry_after_ms=(\d+)/i.exec(message);
+  if (!match) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(match[1] ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+export function computeCapabilityRetryDelayMs(
+  message: string,
+  invocationNumber: number,
+  randomFraction = Math.random(),
+): number {
+  const retryAfterMs = parseRetryAfterMs(message);
+  if (retryAfterMs !== undefined) {
+    return retryAfterMs;
+  }
+
+  const isRateLimit = isRateLimitModelInvokeError(message);
+  const baseDelayMs = isRateLimit ? RATE_LIMIT_RETRY_BASE_DELAY_MS : DEFAULT_MODEL_INVOKE_RETRY_BASE_DELAY_MS;
+  const maxDelayMs = isRateLimit ? RATE_LIMIT_RETRY_MAX_DELAY_MS : DEFAULT_MODEL_INVOKE_RETRY_MAX_DELAY_MS;
+  const exponent = Math.max(invocationNumber - 1, 0);
+  const rawDelayMs = Math.min(baseDelayMs * (2 ** exponent), maxDelayMs);
+  const jitterWindowMs = Math.min(Math.round(rawDelayMs * 0.2), 5_000);
+  const jitterMs = Math.round(Math.max(0, Math.min(1, randomFraction)) * jitterWindowMs);
+  return Math.min(rawDelayMs + jitterMs, maxDelayMs);
 }
 
 function isGreenAttempt(result: AttemptResult): boolean {
