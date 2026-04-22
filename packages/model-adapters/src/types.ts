@@ -1,5 +1,5 @@
 export type ModelInvocationMode = "offline" | "retrieval";
-export type BenchmarkReasoningEffort = "default" | "low" | "medium" | "high" | "xhigh";
+export type BenchmarkReasoningEffort = "default" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface RetrievedChunk {
   documentId: string;

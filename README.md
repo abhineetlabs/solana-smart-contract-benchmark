@@ -116,23 +116,28 @@ For top-end frontier ranking, keep a private suite under `configs/suites/private
 `run` and `run-all` accept:
 
 ```bash
---reasoning-effort default|low|medium|high|xhigh
+--reasoning-effort default|low|medium|high|xhigh|max
 ```
 
 - `default` means the benchmark does not override the provider CLI's default reasoning behavior.
-- `low`, `medium`, `high`, and `xhigh` are benchmark-level settings recorded in run and sweep artifacts.
-- `max` is accepted as a CLI alias and normalized to `xhigh`.
+- `low`, `medium`, `high`, `xhigh`, and `max` are benchmark-level settings recorded in run and sweep artifacts.
+- `xhigh` is the benchmark's extra-high tier.
+  - for Claude Opus 4.7 via Claude Code, this maps to provider `xhigh`
+- `max` is the benchmark's top tier.
+  - in this repo today, benchmark `max` is wired only for the Claude Code adapter
+  - older sweep artifacts that recorded `xhigh` plus provider `max` are preserved as-is; there is no migration or rewrite of past results
 
 Current adapter behavior:
 
 - Claude Code supports benchmark effort control.
-  - The benchmark maps `low|medium|high` directly to `claude --effort`.
-  - Benchmark `xhigh` maps to Claude CLI `--effort max`.
+  - The benchmark maps `low|medium|high|xhigh|max` directly to `claude --effort`.
 - Codex and Codex OSS support benchmark effort control.
   - The benchmark maps `low|medium|high|xhigh` to Codex CLI `-c model_reasoning_effort="..."`.
+  - Passing benchmark `max` fails fast with a clear adapter error instead of being remapped silently.
 - OpenRouter direct supports benchmark effort control.
   - The benchmark maps `low|medium|high|xhigh` directly to OpenRouter `reasoning.effort`.
   - The adapter also asks OpenRouter to exclude reasoning traces from the returned content so file-map JSON stays clean.
+  - Passing benchmark `max` fails fast with a clear adapter error because Anthropic max-effort routing is not yet wired through this adapter.
 - Gemini, OpenCode, and Z.AI direct do not currently expose a benchmark-integrated effort control in this repo.
   - Passing `--reasoning-effort` to those adapters will fail fast instead of silently ignoring the setting.
 
@@ -148,7 +153,7 @@ Artifacts persist both the normalized benchmark setting and the provider-applied
 Examples:
 
 ```bash
-./benchmark run --model claude-code/opus --reasoning-effort xhigh --track native --task counter_authority
+./benchmark run --model claude-code/claude-opus-4-7 --reasoning-effort max --track native --task counter_authority
 ./benchmark run-all --model codex/default --reasoning-effort medium --suite frontier_leaderboard_v1 --max-attempts 1 --strict-capability --runtime-retries 4 --require-full-sweep
 ```
 
@@ -236,6 +241,20 @@ Built-in model ids currently listed by the CLI:
 - `opencode/default`
 - `zai/default`
 - `zai/glm-5.1`
+
+The Claude Code adapter also accepts explicit model patterns even when they are not listed verbatim:
+
+- `claude-code/<model>`
+
+Examples:
+
+```bash
+./benchmark run --model claude-code/opus --track anchor --task counter_authority
+./benchmark run --model claude-code/claude-opus-4-7 --track anchor --task vesting_router_cpi
+./benchmark run --model claude-code/claude-sonnet-4-6 --track anchor --task escrow_basic
+```
+
+For reproducible benchmark comparisons, prefer a fully pinned Claude model name such as `claude-code/claude-opus-4-7` instead of the moving `claude-code/opus` alias.
 
 The Codex adapter also accepts explicit model patterns even when they are not listed verbatim:
 
@@ -1108,5 +1127,5 @@ Both are ignored by git by default, and the loader now discovers them automatica
 - Codex runs depend on a local authenticated `codex` CLI session, and Codex OSS routes require a local provider such as Ollama or LM Studio plus an installed model
 - Gemini runs depend on a local authenticated `gemini` CLI session, and offline benchmark invocations will fail if Gemini uses any tools during the run
 - OpenCode runs depend on a local authenticated `opencode` CLI session; inside the Codex sandbox, OpenCode may fail on its local SQLite/WAL checkpoint path, so run those benchmarks from your normal terminal
-- explicit `--reasoning-effort` control is currently implemented only for Claude Code and Codex-family adapters
+- explicit `--reasoning-effort` control is currently implemented for Claude Code, Codex-family, and OpenRouter direct adapters
 - ranking-suite runs should stay sequential; overlapping Anchor/localnet-backed sweeps can interfere with each other

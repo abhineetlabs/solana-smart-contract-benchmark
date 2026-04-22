@@ -11,7 +11,7 @@ const KNOWN_OPENROUTER_MODELS = [
   `openrouter/${DEFAULT_OPENROUTER_MODEL}`,
 ] as const;
 
-type OpenRouterReasoningEffort = Exclude<BenchmarkReasoningEffort, "default">;
+type OpenRouterReasoningEffort = Exclude<BenchmarkReasoningEffort, "default" | "max">;
 
 interface OpenRouterChatMessage {
   role: "system" | "user";
@@ -390,6 +390,12 @@ function resolveOpenRouterReasoning(
 ): OpenRouterReasoningConfig | undefined {
   if (!effort || effort === "default") {
     return undefined;
+  }
+
+  if (effort === "max") {
+    throw new Error(
+      `OpenRouter direct adapter does not support benchmark reasoning effort "max". Use --reasoning-effort xhigh or route Anthropic max effort through Claude Code.`,
+    );
   }
 
   return {

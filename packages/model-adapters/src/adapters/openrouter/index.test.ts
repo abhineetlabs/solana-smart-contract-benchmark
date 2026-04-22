@@ -64,6 +64,18 @@ test("buildOpenRouterRequestBody enables JSON mode, provider parameter enforceme
   });
 });
 
+test("buildOpenRouterRequestBody rejects benchmark max because OpenRouter uses a different Anthropic reasoning surface", () => {
+  assert.throws(
+    () => buildOpenRouterRequestBody({
+      model: "anthropic/claude-opus-4.7",
+      prompt: "# Task",
+      temperature: 0,
+      reasoningEffort: "max",
+    }),
+    /does not support benchmark reasoning effort "max"/,
+  );
+});
+
 test("buildOpenRouterRequestBody can pin provider routing preferences", () => {
   const body = buildOpenRouterRequestBody({
     model: "z-ai/glm-5.1",

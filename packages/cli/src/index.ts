@@ -1338,8 +1338,8 @@ function printHelp(): void {
   benchmark list tasks
   benchmark list models
   benchmark list suites
-  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--reasoning-effort default|low|medium|high|xhigh] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
-  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--reasoning-effort default|low|medium|high|xhigh] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
+  benchmark run --model <id> --track <track> --task <task> [--mode offline|retrieval] [--reasoning-effort default|low|medium|high|xhigh|max] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>]
+  benchmark run-all --model <id> [--mode offline|retrieval] [--suite <suite>] [--track <track>] [--task <task>] [--difficulty easy|medium|hard] [--repeats <n>] [--reasoning-effort default|low|medium|high|xhigh|max] [--max-attempts <n>] [--strict-capability] [--runtime-retries <n>] [--require-full-sweep] [--warm-cache]
   benchmark resume-sweep [<sweep-id> | --latest] [--retry-benchmark-faults] [--retry-stage <stage[,stage...]>] [--retry-target <task/track[,task/track...]>] [--skip-runtime-excluded] [--require-full-sweep] [--warm-cache]
   benchmark baseline <reference|insecure> --track <track> --task <task>
   benchmark warm-cache --track <track> --task <task>
@@ -1417,16 +1417,13 @@ function parseReasoningEffortOption(value: string | undefined): BenchmarkReasoni
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === "max") {
-    return "xhigh";
-  }
-
   if (
     normalized === "default"
     || normalized === "low"
     || normalized === "medium"
     || normalized === "high"
     || normalized === "xhigh"
+    || normalized === "max"
   ) {
     return normalized;
   }

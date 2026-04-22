@@ -118,7 +118,7 @@ async function invokeClaudeCode(args: {
   model?: string;
   prompt: string;
   cwd: string;
-  reasoningEffort?: "low" | "medium" | "high" | "max";
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
 }): Promise<ClaudeCodeCliEnvelope> {
   const cliBinary = process.env.CLAUDE_BIN ?? "claude";
   const cliArgs = [
@@ -168,9 +168,9 @@ async function invokeClaudeCode(args: {
   return parsed;
 }
 
-function resolveClaudeCodeEffort(
+export function resolveClaudeCodeEffort(
   reasoningEffort: BenchmarkReasoningEffort | undefined,
-): "low" | "medium" | "high" | "max" | undefined {
+): "low" | "medium" | "high" | "xhigh" | "max" | undefined {
   switch (reasoningEffort) {
     case undefined:
     case "default":
@@ -178,9 +178,9 @@ function resolveClaudeCodeEffort(
     case "low":
     case "medium":
     case "high":
-      return reasoningEffort;
     case "xhigh":
-      return "max";
+    case "max":
+      return reasoningEffort;
   }
 }
 

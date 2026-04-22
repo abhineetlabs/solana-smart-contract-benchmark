@@ -240,7 +240,7 @@ function buildCodexOutputSchema(editableFiles: string[]): Record<string, unknown
   };
 }
 
-function resolveCodexReasoningEffort(
+export function resolveCodexReasoningEffort(
   reasoningEffort: BenchmarkReasoningEffort | undefined,
 ): "low" | "medium" | "high" | "xhigh" | undefined {
   switch (reasoningEffort) {
@@ -252,6 +252,10 @@ function resolveCodexReasoningEffort(
     case "high":
     case "xhigh":
       return reasoningEffort;
+    case "max":
+      throw new Error(
+        `Codex CLI adapter does not support benchmark reasoning effort "max". Use --reasoning-effort xhigh or a supported adapter such as Claude Code.`,
+      );
   }
 }
 
